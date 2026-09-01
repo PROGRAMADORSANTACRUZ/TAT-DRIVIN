@@ -238,6 +238,8 @@ export interface ClienteSinRegistrar {
   cliente: string;
   destino: string;
   pedidos: number;
+  numeros?: string[];
+  ids?: string[];
 }
 
 export interface ClienteRegistrado {
@@ -260,8 +262,8 @@ export function verificarClientesOrdenes(): Promise<VerificacionClientes> {
 
 export function syncOrdenesTat(
   origen: "AGROPECUARIA" | "INVERSIONES"
-): Promise<{ importados: number; origen: string }> {
-  return request<{ importados: number; origen: string }>(
+): Promise<{ importados: number; sinCodigo?: number; origen: string }> {
+  return request<{ importados: number; sinCodigo?: number; origen: string }>(
     "/api/ordenes/sync-tat",
     {
       method: "POST",
@@ -276,6 +278,15 @@ export function deleteOrdenes(
   const qs = tipo ? `?tipo=${tipo}` : "";
   return request<{ eliminados: number }>(`/api/ordenes${qs}`, {
     method: "DELETE",
+  });
+}
+
+export function eliminarOrdenesPorIds(
+  ids: string[]
+): Promise<{ eliminados: number }> {
+  return request<{ eliminados: number }>("/api/ordenes/eliminar", {
+    method: "POST",
+    body: JSON.stringify({ ids }),
   });
 }
 
@@ -540,6 +551,7 @@ export async function importOrdenes(
   entregados: number;
   rechazados: number;
   pendientes: number;
+  sinCodigo?: number;
 }> {
   const form = new FormData();
   form.append("tipo", tipo);
@@ -565,6 +577,7 @@ export async function importOrdenes(
     entregados: number;
     rechazados: number;
     pendientes: number;
+    sinCodigo?: number;
   };
 }
 

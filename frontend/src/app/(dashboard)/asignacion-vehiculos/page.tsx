@@ -13,12 +13,26 @@ import {
   getSchemas,
   getVehiculosExternos,
   reenviarOrdenes,
+  verificarClientesOrdenes,
   type Orden,
   type Plan,
   type PlanMeta,
   type VehiculoExterno,
+  type VerificacionClientes,
 } from "@/lib/api";
 import SearchInput from "@/components/SearchInput";
+
+// Clave normalizada para cruzar con la verificación (cliente||destino).
+function claveCD(cliente: string, destino: string): string {
+  const n = (s: string) =>
+    s
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  return `${n(cliente)}||${n(destino)}`;
+}
 
 type OrdenGrupo = {
   key: string;
@@ -95,6 +109,11 @@ export default function AsignacionVehiculosPage() {
   const [modalCapacidad, setModalCapacidad] = useState(false);
   const [buscarDiagrama, setBuscarDiagrama] = useState("");
 
+  // Verificación de clientes (código en Drivin) para bloquear asignaciones no limpias.
+  const [verif, setVerif] = useState<VerificacionClientes | null>(null);
+  const [clientesSinCodigo, setClientesSinCodigo] = useState<OrdenGrupo[]>([]);
+  const [modalSinCodigo, setModalSinCodigo] = useState(false);
+
   // Estados del modal "Enviar a Drivin"
   const [planModal, setPlanModal] = useState(false);
   const [enviando, setEnviando] = useState(false);
@@ -120,6 +139,9 @@ export default function AsignacionVehiculosPage() {
       ]);
       setVehiculos(vehs);
       setOrdenes(ords);
+      verificarClientesOrdenes()
+        .then(setVerif)
+        .catch(() => setVerif(null));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al cargar");
     }
@@ -152,6 +174,14 @@ export default function AsignacionVehiculosPage() {
 
   const sinAsignarGrupos = pendientes.filter((g) => !g.asignado);
   const conAsignacionGrupos = pendientes.filter((g) => g.asignado);
+
+  // Mapa cliente||destino -> código de Drivin (para bloquear clientes no limpios).
+  const codigoPorClave = new Map<string, string>();
+  if (verif) {
+    for (const r of verif.registrados) {
+      if (r.codigo) codigoPorClave.set(claveCD(r.cliente, r.destino), r.codigo);
+    }
+  }
 
   const asignadasPorPlaca = (placa: string) =>
     pendientes.filter((g) => g.asignado === placa);
@@ -188,6 +218,16 @@ export default function AsignacionVehiculosPage() {
   async function asignar(vehiculo: VehiculoExterno) {
     const seleccionadas = pendientes.filter((g) => seleccion.has(g.key));
     if (seleccionadas.length === 0) return;
+
+    // Bloquea asignar clientes "no limpios" (sin código en Drivin).
+    const sinCodigo = seleccionadas.filter(
+      (g) => !codigoPorClave.get(claveCD(g.cliente, g.destino))
+    );
+    if (sinCodigo.length > 0) {
+      setClientesSinCodigo(sinCodigo);
+      setModalSinCodigo(true);
+      return;
+    }
 
     // Usa la capacidad real si está definida; si no, la de Drivin.
     const capEfectiva = vehiculo.capacidadReal ?? vehiculo.capacidad;
@@ -892,6 +932,52 @@ export default function AsignacionVehiculosPage() {
             <div className="flex justify-end border-t border-[#eceef0] px-6 py-4">
               <button
                 onClick={() => setModalCapacidad(false)}
+                className="rounded-lg bg-[#14352a] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1e4a38]"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalSinCodigo && (
+        <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+            <div className="border-b border-[#eceef0] px-6 py-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fdf6e9] text-[#a86a12]">
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                </span>
+                <div>
+                  <h3 className="text-base font-semibold text-[#14352a]">Clientes sin registrar en Drivin</h3>
+                  <p className="text-sm text-[#5f7a68]">No se puede asignar hasta limpiarlos</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-5">
+              <p className="mb-3 text-sm text-[#45505e]">
+                Las siguientes órdenes tienen clientes que <span className="font-semibold text-[#a86a12]">no están registrados en Drivin</span>. Debes crearlos o asignarles su consecutivo en <span className="font-semibold">Cargar Órdenes</span> antes de asignarlos a un vehículo:
+              </p>
+              <div className="max-h-64 divide-y divide-[#f0f2ee] overflow-auto rounded-xl border border-[#f0d9b0] bg-[#fdf6e9]">
+                {clientesSinCodigo.map((g) => (
+                  <div key={g.key} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-[#14352a]">{tc(g.cliente)}</p>
+                      <p className="truncate text-xs text-[#7a8794]">{tc(g.destino)}</p>
+                    </div>
+                    <span className="shrink-0 text-sm text-[#a86a12]">{g.numeroOrden}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end border-t border-[#eceef0] px-6 py-4">
+              <button
+                onClick={() => setModalSinCodigo(false)}
                 className="rounded-lg bg-[#14352a] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1e4a38]"
               >
                 Entendido

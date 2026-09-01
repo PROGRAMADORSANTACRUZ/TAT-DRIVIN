@@ -25,6 +25,9 @@ const envSchema = z.object({
     .default(
       "https://sigcom.grupo-santacruz.com/api/public/dispatch/tat-invoices?cia={cia}"
     ),
+  // Token de la API pública de despacho de SIGCOM (DISPATCH_API_TOKEN). Se envía
+  // en el header x-api-key; sin él la API responde 401.
+  TAT_INVOICES_TOKEN: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

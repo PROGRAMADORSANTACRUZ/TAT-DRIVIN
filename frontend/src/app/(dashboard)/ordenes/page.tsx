@@ -9,6 +9,7 @@ import {
   asignarConsecutivo,
   cruzarConsecutivosAuto,
   deleteOrdenes,
+  eliminarOrdenesPorIds,
   getClientes,
   getOrdenes,
   importOrdenes,
@@ -254,10 +255,11 @@ export default function OrdenesPage() {
     setError(null);
     setMessage(null);
     try {
-      const { importados, entregados, rechazados, pendientes } =
+      const { importados, entregados, rechazados, pendientes, sinCodigo } =
         await importOrdenes(file, tipo);
       setMessage(
-        `Se importaron ${importados}: ${entregados} entregadas, ${rechazados} rechazadas, ${pendientes} pendientes.`
+        `Se importaron ${importados}: ${entregados} entregadas, ${rechazados} rechazadas, ${pendientes} pendientes.` +
+          (sinCodigo ? ` ${sinCodigo} órdenes no se subieron por no tener número de orden.` : "")
       );
       await load();
     } catch (err) {
@@ -298,9 +300,12 @@ export default function OrdenesPage() {
     setError(null);
     setMessage(null);
     try {
-      const { importados } = await syncOrdenesTat(origen);
+      const { importados, sinCodigo } = await syncOrdenesTat(origen);
       const label = origen === "INVERSIONES" ? "Inversiones" : "Agropecuaria";
-      setMessage(`Se sincronizaron ${importados} facturas TAT (${label}).`);
+      setMessage(
+        `Se sincronizaron ${importados} facturas TAT (${label}).` +
+          (sinCodigo ? ` ${sinCodigo} facturas no se subieron por no tener número.` : "")
+      );
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al sincronizar TAT");
@@ -368,6 +373,17 @@ export default function OrdenesPage() {
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al asignar");
+    }
+  }
+
+  async function handleEliminarSinRegistrar(c: ClienteSinRegistrar) {
+    if (!c.ids || c.ids.length === 0) return;
+    try {
+      const { eliminados } = await eliminarOrdenesPorIds(c.ids);
+      setMessage(`Se eliminaron ${eliminados} órdenes de ${tc(c.cliente)}.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Error al eliminar");
     }
   }
 
@@ -1048,7 +1064,8 @@ export default function OrdenesPage() {
                     <th className="px-4 py-3 font-semibold">#</th>
                     <th className="px-4 py-3 font-semibold">Cliente</th>
                     <th className="px-4 py-3 font-semibold">Destino</th>
-                    <th className="px-4 py-3 font-semibold">Concatenado</th>
+                    <th className="px-4 py-3 font-semibold">Concatenado (temporal)</th>
+                    <th className="px-4 py-3 font-semibold">No. Orden</th>
                     <th className="px-4 py-3 text-right font-semibold">Pedidos</th>
                     <th className="px-4 py-3 text-right font-semibold">Acciones</th>
                   </tr>
@@ -1076,6 +1093,27 @@ export default function OrdenesPage() {
                         <td className="px-4 py-3 text-[#45505e]">
                           {`${tc(c.cliente)} - ${tc(c.destino)}`}
                         </td>
+                        <td className="px-4 py-3 text-[#45505e]">
+                          {c.numeros && c.numeros.length > 0 ? (
+                            <span className="inline-flex flex-wrap gap-1">
+                              {c.numeros.slice(0, 6).map((n) => (
+                                <span
+                                  key={n}
+                                  className="rounded bg-[#f0f2ee] px-1.5 py-0.5 text-xs font-medium text-[#45505e]"
+                                >
+                                  {n}
+                                </span>
+                              ))}
+                              {c.numeros.length > 6 && (
+                                <span className="text-xs text-[#7a8794]">
+                                  +{c.numeros.length - 6}
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-right tabular-nums text-[#14352a]">
                           {c.pedidos}
                         </td>
@@ -1092,6 +1130,12 @@ export default function OrdenesPage() {
                               className="rounded-lg border border-[#cfe4d6] bg-[#eef7ea] px-2.5 py-1 text-xs font-medium text-[#2f8f4e] transition-colors hover:bg-[#e2f0dc]"
                             >
                               Crear
+                            </button>
+                            <button
+                              onClick={() => handleEliminarSinRegistrar(c)}
+                              className="rounded-lg border border-[#f0c4c1] bg-[#fbeceb] px-2.5 py-1 text-xs font-medium text-[#b3261e] transition-colors hover:bg-[#f7dcda]"
+                            >
+                              Eliminar
                             </button>
                           </div>
                         </td>

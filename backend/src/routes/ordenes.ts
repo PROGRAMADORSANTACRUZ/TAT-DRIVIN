@@ -436,7 +436,7 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
     const [ordenes, addresses, clientesGS] = await Promise.all([
       prisma.orden.findMany({
         where: { estado: { notIn: ["Entregado", "Rechazado"] } },
-        select: { cliente: true, destino: true, numeroOrden: true },
+        select: { id: true, cliente: true, destino: true, numeroOrden: true },
       }),
       fetchDrivinAddresses(),
       prisma.cliente.findMany({
@@ -483,22 +483,25 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
     // Agrupa por par cliente||destino.
     const grupos = new Map<
       string,
-      { cliente: string; destino: string; pedidos: Set<string> }
+      { cliente: string; destino: string; pedidos: Set<string>; ids: string[] }
     >();
     for (const o of ordenes) {
       const key = `${claveCliente(o.cliente)}||${claveCliente(o.destino)}`;
       let g = grupos.get(key);
       if (!g) {
-        g = { cliente: o.cliente, destino: o.destino, pedidos: new Set() };
+        g = { cliente: o.cliente, destino: o.destino, pedidos: new Set(), ids: [] };
         grupos.set(key, g);
       }
       g.pedidos.add(o.numeroOrden);
+      g.ids.push(o.id);
     }
 
     const sinRegistrar: {
       cliente: string;
       destino: string;
       pedidos: number;
+      numeros: string[];
+      ids: string[];
     }[] = [];
     const registrados: {
       cliente: string;
@@ -527,6 +530,8 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
           cliente: g.cliente,
           destino: g.destino,
           pedidos: g.pedidos.size,
+          numeros: [...g.pedidos],
+          ids: g.ids,
         });
       }
     }
@@ -560,16 +565,18 @@ router.post(
         throw new HttpError(400, "Selecciona el tipo (Bovino, Porcino o Inversiones)");
       }
 
-      const ordenes = (tipo === "I" ? parseOrdenesInversiones(req.file.buffer) : parseOrdenes(req.file.buffer)).map((o) => ({
-        ...o,
-        numeroOrden: o.numeroOrden ? tipo + o.numeroOrden : o.numeroOrden,
-      }));
-      if (ordenes.length === 0) {
+      const ordenes = (tipo === "I" ? parseOrdenesInversiones(req.file.buffer) : parseOrdenes(req.file.buffer));
+      // Órdenes sin número de orden ("sin código") no se suben.
+      const sinCodigo = ordenes.filter((o) => !o.numeroOrden.trim()).length;
+      const ordenesConCodigo = ordenes
+        .filter((o) => o.numeroOrden.trim())
+        .map((o) => ({ ...o, numeroOrden: tipo + o.numeroOrden }));
+      if (ordenesConCodigo.length === 0) {
         throw new HttpError(400, "El archivo no contiene órdenes válidas");
       }
 
       // Cruza con los PODs de Drivin para marcar las entregadas.
-      const isoDates = ordenes
+      const isoDates = ordenesConCodigo
         .map((o) => ddmmyyyyToISO(o.fecha))
         .filter(Boolean)
         .sort();
@@ -584,7 +591,7 @@ router.post(
         }
       }
 
-      const data = ordenes.map((o) => {
+      const data = ordenesConCodigo.map((o) => {
         const pod = podEstados.get(normCodigo(`${o.cliente}-${o.destino}`));
         return {
           ...o,
@@ -618,6 +625,7 @@ router.post(
         entregados: nEntregados,
         rechazados: nRechazados,
         pendientes: data.length - nEntregados - nRechazados,
+        sinCodigo,
       });
     } catch (err) {
       next(err);
@@ -807,9 +815,19 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
     }
 
     const url = env.TAT_INVOICES_URL.replace("{cia}", cia);
-    const resp = await fetch(url);
+    const resp = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "x-api-key": env.TAT_INVOICES_TOKEN ?? "",
+      },
+      signal: AbortSignal.timeout(15000),
+    });
     if (!resp.ok) {
-      throw new HttpError(502, `La API de facturas respondió ${resp.status}`);
+      const body = await resp.text().catch(() => "");
+      throw new HttpError(
+        502,
+        `La API de facturas respondió ${resp.status}: ${body.slice(0, 150)}`
+      );
     }
 
     const filas = (await resp.json()) as TatInvoice[];
@@ -842,6 +860,7 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
       }
     }
 
+    const sinCodigo = filas.filter((f) => !f.nro_documento).length;
     const data = filas
       .filter((f) => f.nro_documento)
       .map((f) => {
@@ -873,7 +892,23 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
       prisma.orden.createMany({ data }),
     ]);
 
-    res.status(201).json({ importados: data.length, origen });
+    res.status(201).json({ importados: data.length, sinCodigo, origen });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/ordenes/eliminar  -> elimina órdenes específicas por ids
+router.post("/eliminar", requireAuth, requirePermiso("/ordenes"), async (req, res, next) => {
+  try {
+    const ids: unknown = req.body?.ids;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new HttpError(400, "No se recibieron órdenes para eliminar");
+    }
+    const { count } = await prisma.orden.deleteMany({
+      where: { id: { in: ids.map(String) } },
+    });
+    res.json({ eliminados: count });
   } catch (err) {
     next(err);
   }
