@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 120" width="60" height="120">
+  <!-- Ruedas izquierda -->
+  <rect x="0" y="38" width="9" height="16" rx="3" fill="#111827"/>
+  <rect x="0" y="80" width="9" height="16" rx="3" fill="#111827"/>
+  <!-- Ruedas derecha -->
+  <rect x="51" y="38" width="9" height="16" rx="3" fill="#111827"/>
+  <rect x="51" y="80" width="9" height="16" rx="3" fill="#111827"/>
+  <!-- Caja de carga -->
+  <rect x="9" y="32" width="42" height="80" rx="4" fill="url(#bodyGrad)"/>
+  <rect x="13" y="36" width="34" height="72" rx="2" fill="#1f2937" opacity="0.5"/>
+  <line x1="9" y1="56" x2="51" y2="56" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>
+  <line x1="9" y1="80" x2="51" y2="80" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>
+  <!-- Retroluces -->
+  <rect x="12" y="106" width="12" height="5" rx="2" fill="#7f1d1d"/>
+  <rect x="36" y="106" width="12" height="5" rx="2" fill="#7f1d1d"/>
+  <!-- Cabina -->
+  <rect x="9" y="4" width="42" height="30" rx="6" fill="url(#cabGrad)"/>
+  <!-- Parabrisas -->
+  <rect x="14" y="9" width="32" height="16" rx="3" fill="#0f2340"/>
+  <rect x="16" y="10" width="14" height="6" rx="2" fill="rgba(255,255,255,0.1)" transform="rotate(-8 16 10)"/>
+  <!-- Faros -->
+  <rect x="10" y="4" width="10" height="5" rx="2" fill="#713f12"/>
+  <rect x="40" y="4" width="10" height="5" rx="2" fill="#713f12"/>
+  <!-- Gradientes -->
+  <defs>
+    <linearGradient id="bodyGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4b5563"/>
+      <stop offset="50%" stop-color="#374151"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="cabGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6b7280"/>
+      <stop offset="60%" stop-color="#4b5563"/>
+      <stop offset="100%" stop-color="#1f2937"/>
+    </linearGradient>
+  </defs>
+</svg>

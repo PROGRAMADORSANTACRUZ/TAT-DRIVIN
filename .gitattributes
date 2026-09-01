@@ -1,0 +1,15 @@
+# Normaliza saltos de línea. Los scripts de shell SIEMPRE en LF
+# para que funcionen dentro de los contenedores Linux.
+* text=auto eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.xls binary
+*.xlsx binary

@@ -1,0 +1,235 @@
+// Prisma schema
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Usuario del sistema. Se autentica con cédula + contraseña.
+model User {
+  id        String   @id @default(cuid())
+  cedula    String   @unique
+  password  String
+  name      String?
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Role {
+  USER
+  ADMIN
+  DEVELOPER
+}
+
+// Conductor registrado en el sistema.
+model Conductor {
+  id        String   @id @default(cuid())
+  nombres   String   @default("")
+  apellidos String   @default("")
+  cedula    String?  @unique
+  correo    String?
+  celular   String?
+  perfil    String   @default("Conductor")
+  depositos String?
+  clientes  String?
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Vehículo registrado en el sistema.
+model Vehiculo {
+  id                 String   @id @default(cuid())
+  placa              String   @unique
+  modelo             String?
+  anio               Int?
+  horaInicioJornada  String?
+  horaFinJornada     String?
+  caracteristica     String?
+  capacidad          String?
+  capacidadReal      String?
+  cubicaje           String?
+  empleadores        String?
+  flotas             String?
+  estado             String   @default("Activo")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// Orden importada desde el informe de despachos.
+model Orden {
+  id          String   @id @default(cuid())
+  fecha       String
+  numeroOrden String
+  cliente     String
+  destino     String
+  producto    String
+  cantidadKg  Float    @default(0)
+  estado      String   @default("Pendiente")
+
+  // Distribución a la que pertenece la orden: "AGROPECUARIA" (Excel) o "TAT" (API).
+  distribucion String  @default("AGROPECUARIA")
+
+  // Origen de las facturas TAT: "AGROPECUARIA" (cia 3) o "INVERSIONES" (cia 8).
+  tatOrigen String?
+
+  // Metadatos del POD de Drivin (para poder reenviar la orden).
+  podCode       String?
+  scenarioToken String?
+  deliveredBy   String?
+  podLat        Float?
+  podLng        Float?
+  reasonName    String?
+  reasonCode    String?
+
+  // Reenvío de una orden rechazada.
+  reenviado   Boolean   @default(false)
+  reenviadoAt DateTime?
+
+  // Placa del vehículo al que se asignó la orden.
+  asignadoVehiculo String?
+
+  createdAt DateTime @default(now())
+
+  @@index([numeroOrden])
+  @@index([distribucion])
+  @@index([asignadoVehiculo])
+  @@index([estado])
+  @@index([fecha])
+}
+
+// Cliente/dirección importado desde el maestro de direcciones.
+model Cliente {
+  id              String   @id @default(cuid())
+  codigoDireccion String?
+  nombreDireccion String?
+  cliente         String?
+  tipoDireccion   String?
+  direccion       String?
+  referencia      String?
+  descripcion     String?
+  comuna          String?
+  provincia       String?
+  region          String?
+  pais            String?
+  codigoPostal    String?
+  lat             String?
+  lon             String?
+  barrio          String?
+  telefono        String?
+  correo          String?
+  puntoVenta      String?
+  tipo            String?  // "TAT" | "Distribución"
+  activo          Boolean  @default(true)
+  consecutivos    String?  // JSON: lista de consecutivos/concatenados que mapean a este cliente
+  createdAt       DateTime @default(now())
+
+  @@index([cliente])
+}
+
+// Cliente TAT sincronizado desde la API de Grupo Santacruz.
+model ClienteTat {
+  id                  String   @id @default(cuid())
+  codigoTercero       String?
+  nit                 String?
+  razonSocial         String?
+  sucursal            String?
+  descripcionSucursal String?
+  direccion1          String?
+  barrio              String?
+  ciudad              String?
+  departamento        String?
+  pais                String?
+  telefono            String?
+  celular             String?
+  correo              String?
+  idVendedor          String?
+  vendedor            String?
+  idCriterio          String?
+  criterio            String?
+  referencia          String?
+  lat                 String?
+  lon                 String?
+  puntoVenta          String?
+  tipo                String?  // "TAT" | "Distribución"
+  consecutivos        String?  // JSON: concatenados que mapean a este cliente
+  editado             Boolean  @default(false)
+  editadoAt           DateTime?
+  eliminado           Boolean  @default(false)
+  eliminadoAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @default(now()) @updatedAt
+
+  @@index([razonSocial])
+  @@index([codigoTercero])
+}
+
+// Planilla de despacho: dato de las remisiones/facturas con las que sale un
+// vehículo a ruta. Incluye documentos exigidos por ley y la ruta/tipo de despacho.
+model PlanillaDespacho {
+  id           String   @id @default(cuid())
+  consecutivo  Int
+  fecha        String
+  placa        String
+  conductor    String?
+  origen       String?
+  horaSalida   String?
+  auxiliarRuta String?
+  tipoDespacho String?
+  ruta         String?
+  docs         Int      @default(0)
+  kilos        Float    @default(0)
+  clientes     String?  // JSON: lista de destinos/clientes
+  documentos   String?  // JSON: checklist de documentos legales
+  items        String?  // JSON: líneas [{numeroOrden, cliente, destino, kg}]
+  anulada      Boolean  @default(false)
+  anuladaAt    DateTime?
+  impresa      Boolean  @default(false)
+  impresaAt    DateTime?
+  reemplazadaPorConsecutivo Int?   // consecutivo de la nueva planilla que reemplaza esta
+  reemplazaDeConsecutivo    Int?   // consecutivo de la planilla original que reemplaza
+  createdAt    DateTime @default(now())
+
+  @@index([fecha])
+  @@index([placa])
+}
+
+// Novedad de nivel de servicio: estado de entrega por item de planilla.
+model Novedad {
+  id              String   @id @default(cuid())
+  consecutivo     Int
+  fecha           String
+  // Campos legacy (se mantienen para compatibilidad)
+  tipo            String   @default("")
+  prioridad       String   @default("Media")
+  estado          String   @default("Pendiente")
+  // Campos nuevos de nivel de servicio
+  estadoEntrega   String   @default("Sin Novedad") // Sin Novedad | Con Novedad | Doc.Pendiente | Reenvio
+  novedad         String?  // Tipo de novedad del selector (Averías, Cliente Cerrado, etc.)
+  responsabilidad String?  // Clientes, Comercial, Despacho Bovino, etc.
+  noLlego         String?  // JSON: [{producto, despachado, noLlego}]
+  // Referencia al item de planilla
+  planillaId      String?
+  // Datos del despacho
+  placa           String?
+  conductor       String?
+  auxiliarRuta    String?
+  cliente         String?
+  numeroOrden     String?
+  descripcion     String   @default("")
+  resolucion      String?
+  resueltaAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
+
+  @@index([estado])
+  @@index([fecha])
+}
+
+

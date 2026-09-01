@@ -1,0 +1,228 @@
+import { Router } from "express";
+import { z } from "zod";
+import { prisma } from "../lib/prisma";
+import { HttpError } from "../middleware/errorHandler";
+import { requireAuth } from "../middleware/auth";
+
+const router = Router();
+
+const itemSchema = z.object({
+  numeroOrden: z.string(),
+  cliente: z.string().optional().default(""),
+  destino: z.string().optional().default(""),
+  area: z.string().optional().default(""),
+  codigoArea: z.string().optional().default(""),
+  nombreDestino: z.string().optional().default(""),
+  direccion: z.string().optional().default(""),
+  kg: z.coerce.number().default(0),
+});
+
+const planillaSchema = z.object({
+  fecha: z.string().trim().min(1, "La fecha es obligatoria"),
+  placa: z.string().trim().min(1, "La placa es obligatoria"),
+  conductor: z.string().trim().optional().nullable(),
+  origen: z.string().trim().optional().nullable(),
+  horaSalida: z.string().trim().optional().nullable(),
+  auxiliarRuta: z.string().trim().optional().nullable(),
+  tipoDespacho: z.string().trim().optional().nullable(),
+  ruta: z.string().trim().optional().nullable(),
+  docs: z.coerce.number().int().min(0).default(0),
+  kilos: z.coerce.number().min(0).default(0),
+  clientes: z.array(z.string()).optional().default([]),
+  items: z.array(itemSchema).optional().default([]),
+});
+
+const patchSchema = z.object({
+  placa: z.string().trim().optional(),
+  conductor: z.string().trim().optional().nullable(),
+  auxiliarRuta: z.string().trim().optional().nullable(),
+  ruta: z.string().trim().optional().nullable(),
+  tipoDespacho: z.string().trim().optional().nullable(),
+  horaSalida: z.string().trim().optional().nullable(),
+  items: z.array(itemSchema).optional(),
+  anulada: z.boolean().optional(),
+  impresa: z.boolean().optional(),
+});
+
+type Item = z.infer<typeof itemSchema>;
+
+function parseItems(raw: string | null): Item[] {
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw) as Item[];
+  } catch {
+    return [];
+  }
+}
+
+// GET /api/planillas  -> historial de plantillas generadas
+router.get("/", requireAuth, async (_req, res, next) => {
+  try {
+    const planillas = await prisma.planillaDespacho.findMany({
+      orderBy: { consecutivo: "desc" },
+    });
+    res.json(
+      planillas.map((p) => ({
+        ...p,
+        clientes: p.clientes ? (JSON.parse(p.clientes) as string[]) : [],
+        items: parseItems(p.items),
+      }))
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/planillas  -> crea una planilla y asigna consecutivo
+router.post("/", requireAuth, async (req, res, next) => {
+  try {
+    const parsed = planillaSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new HttpError(400, parsed.error.issues[0].message);
+    }
+    const d = parsed.data;
+    const last = await prisma.planillaDespacho.findFirst({
+      orderBy: { consecutivo: "desc" },
+      select: { consecutivo: true },
+    });
+    const consecutivo = (last?.consecutivo ?? 0) + 1;
+
+    const planilla = await prisma.planillaDespacho.create({
+      data: {
+        consecutivo,
+        fecha: d.fecha,
+        placa: d.placa,
+        conductor: d.conductor ?? null,
+        origen: d.origen ?? null,
+        horaSalida: d.horaSalida ?? null,
+        auxiliarRuta: d.auxiliarRuta ?? null,
+        tipoDespacho: d.tipoDespacho ?? null,
+        ruta: d.ruta ?? null,
+        docs: d.docs,
+        kilos: d.kilos,
+        clientes: JSON.stringify(d.clientes ?? []),
+        items: JSON.stringify(d.items ?? []),
+      },
+    });
+    res.status(201).json({
+      ...planilla,
+      clientes: d.clientes ?? [],
+      items: d.items ?? [],
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/planillas/:id  -> edita cabecera e items (recalcula docs/kilos)
+router.patch("/:id", requireAuth, async (req, res, next) => {
+  try {
+    const id = String(req.params.id);
+    const parsed = patchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new HttpError(400, parsed.error.issues[0].message);
+    }
+    const d = parsed.data;
+    const data: Record<string, unknown> = {};
+    if (d.placa !== undefined) data.placa = d.placa;
+    if (d.conductor !== undefined) data.conductor = d.conductor ?? null;
+    if (d.auxiliarRuta !== undefined) data.auxiliarRuta = d.auxiliarRuta ?? null;
+    if (d.ruta !== undefined) data.ruta = d.ruta ?? null;
+    if (d.tipoDespacho !== undefined) data.tipoDespacho = d.tipoDespacho ?? null;
+    if (d.horaSalida !== undefined) data.horaSalida = d.horaSalida ?? null;
+    if (d.anulada !== undefined) {
+      data.anulada = d.anulada;
+      data.anuladaAt = d.anulada ? new Date() : null;
+    }
+    if (d.impresa !== undefined) {
+      data.impresa = d.impresa;
+      data.impresaAt = d.impresa ? new Date() : null;
+    }
+    if (d.items !== undefined) {
+      const items = d.items;
+      data.items = JSON.stringify(items);
+      data.docs = new Set(items.map((i) => i.numeroOrden)).size;
+      data.kilos = items.reduce((s, i) => s + i.kg, 0);
+    }
+
+    const planilla = await prisma.planillaDespacho.update({ where: { id }, data });
+    res.json({
+      ...planilla,
+      clientes: planilla.clientes ? (JSON.parse(planilla.clientes) as string[]) : [],
+      items: parseItems(planilla.items),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/planillas/:id
+router.delete("/:id", requireAuth, async (req, res, next) => {
+  try {
+    await prisma.planillaDespacho.delete({ where: { id: String(req.params.id) } });
+    res.json({ eliminado: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/planillas/:id/anular — anula la planilla actual y crea una nueva copia con nuevo consecutivo
+router.post("/:id/anular", requireAuth, async (req, res, next) => {
+  try {
+    const id = String(req.params.id);
+    const original = await prisma.planillaDespacho.findUnique({ where: { id } });
+    if (!original) throw new HttpError(404, "Planilla no encontrada");
+
+    // Marcar la original como anulada
+    await prisma.planillaDespacho.update({
+      where: { id },
+      data: { anulada: true, anuladaAt: new Date() },
+    });
+
+    // Obtener siguiente consecutivo
+    const last = await prisma.planillaDespacho.findFirst({
+      orderBy: { consecutivo: "desc" },
+      select: { consecutivo: true },
+    });
+
+    const nuevaConsecutivo = (last?.consecutivo ?? 0) + 1;
+
+    const nueva = await prisma.planillaDespacho.create({
+      data: {
+        consecutivo: nuevaConsecutivo,
+        fecha: original.fecha,
+        placa: original.placa,
+        conductor: original.conductor,
+        origen: original.origen,
+        horaSalida: original.horaSalida,
+        auxiliarRuta: original.auxiliarRuta,
+        tipoDespacho: original.tipoDespacho,
+        ruta: original.ruta,
+        docs: original.docs,
+        kilos: original.kilos,
+        clientes: original.clientes,
+        items: original.items,
+        reemplazaDeConsecutivo: original.consecutivo,
+      },
+    });
+
+    // Actualizar original con referencia a la nueva
+    await prisma.planillaDespacho.update({
+      where: { id },
+      data: { reemplazadaPorConsecutivo: nuevaConsecutivo },
+    });
+
+    res.status(201).json({
+      anulada: { ...original, anulada: true },
+      nueva: {
+        ...nueva,
+        clientes: nueva.clientes ? (JSON.parse(nueva.clientes) as string[]) : [],
+        items: parseItems(nueva.items),
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;
