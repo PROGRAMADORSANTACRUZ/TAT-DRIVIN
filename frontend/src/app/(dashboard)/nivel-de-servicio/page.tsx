@@ -62,7 +62,13 @@ type RowDraft = {
   descripcion: string;
 };
 
-type NoLlegoItem = { producto: string; despachado: number; noLlego: number };
+// sentido: "contra" = llegó de menos (faltó); "favor" = llegó de más.
+// noLlego se conserva opcional para leer novedades guardadas con el formato anterior.
+type NoLlegoItem = { producto: string; despachado: number; sentido: "contra" | "favor"; diferencia: number; noLlego?: number };
+
+function recibidoDe(row: { despachado: number; sentido: "contra" | "favor"; diferencia: number }): number {
+  return row.sentido === "favor" ? row.despachado + row.diferencia : Math.max(0, row.despachado - row.diferencia);
+}
 
 const ESTADO_STYLE: Record<string, { border: string; text: string; bg: string; dot: string }> = {
   "Sin Novedad":         { border: "border-[#2f8f4e]", text: "text-[#2f8f4e]",  bg: "bg-[#f2f8ef]",  dot: "bg-[#2f8f4e]" },
@@ -265,23 +271,34 @@ export default function NivelServicioPage() {
   }
 
   function openReportarModal(planillaId: string, item: PlanillaItem, planilla: Planilla) {
-    const prods = ordenes.filter(
+    // Empareja por remisión + placa; si no hay coincidencia, por remisión sola (para tener el producto real).
+    let prods = ordenes.filter(
       (o) => o.numeroOrden === item.numeroOrden &&
              o.asignadoVehiculo?.toUpperCase() === planilla.placa.toUpperCase()
     );
+    if (prods.length === 0) {
+      prods = ordenes.filter((o) => o.numeroOrden === item.numeroOrden);
+    }
     const key = `${planillaId}|${item.numeroOrden}`;
     let saved: NoLlegoItem[] = [];
     try { saved = JSON.parse(novedadMap.get(key)?.noLlego ?? "[]"); } catch { saved = []; }
+    // Convierte una novedad guardada al modelo diferencia (compat con formato antiguo `noLlego`).
+    const toDiff = (s?: NoLlegoItem): { sentido: "contra" | "favor"; diferencia: number } => {
+      if (!s) return { sentido: "contra", diferencia: 0 };
+      if (s.sentido) return { sentido: s.sentido, diferencia: s.diferencia ?? 0 };
+      return { sentido: "contra", diferencia: s.noLlego ?? 0 };
+    };
 
     setNoLlegoData(
       prods.length > 0
-        ? prods.map((o) => ({
-            producto: o.producto,
-            despachado: o.cantidadKg,
-            // default = todo no llegó; si hay guardado previo se usa ese
-            noLlego: saved.find((s) => s.producto === o.producto)?.noLlego ?? o.cantidadKg,
-          }))
-        : [{ producto: item.nombreDestino || item.destino || "Producto", despachado: item.kg, noLlego: saved[0]?.noLlego ?? item.kg }]
+        ? prods.map((o) => {
+            const d = toDiff(saved.find((s) => s.producto === o.producto));
+            return { producto: o.producto, despachado: o.cantidadKg, sentido: d.sentido, diferencia: d.diferencia };
+          })
+        : [(() => {
+            const d = toDiff(saved[0]);
+            return { producto: item.numeroOrden || "Producto", despachado: item.kg, sentido: d.sentido, diferencia: d.diferencia };
+          })()]
     );
     setReportando({ planillaId, item, planilla });
   }
@@ -638,8 +655,8 @@ export default function NivelServicioPage() {
                 Reportar Novedad — <span className="font-mono text-[#2f8f4e]">{reportando.item.numeroOrden}</span>
               </h3>
               <p className="mt-0.5 text-sm text-[#5f7a68]">
-                Ajusta lo despachado si aplica e indica los kilos que el cliente reporta como{" "}
-                <strong className="text-[#14352a]">no recibidos</strong> por cada producto.
+                Ajusta lo despachado si aplica e indica la{" "}
+                <strong className="text-[#14352a]">diferencia</strong> (a favor o en contra) que el cliente reporta por cada producto.
               </p>
             </div>
 
@@ -649,7 +666,7 @@ export default function NivelServicioPage() {
                   <tr className="border-b border-[#eceef0]">
                     <th className="pb-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#7a8794]">Producto</th>
                     <th className="pb-2.5 text-right text-xs font-semibold uppercase tracking-wide text-[#7a8794]">Despachado (kg)</th>
-                    <th className="pb-2.5 text-right text-xs font-semibold uppercase tracking-wide text-[#7a8794]">No llegó (kg)</th>
+                    <th className="pb-2.5 text-right text-xs font-semibold uppercase tracking-wide text-[#7a8794]">Diferencia</th>
                     <th className="pb-2.5 text-right text-xs font-semibold uppercase tracking-wide text-[#2f8f4e]">Recibido (kg)</th>
                   </tr>
                 </thead>
@@ -665,14 +682,24 @@ export default function NivelServicioPage() {
                         />
                       </td>
                       <td className="py-3 pr-2 text-right">
-                        <input
-                          type="number" step="any" min="0" value={row.noLlego}
-                          onChange={(e) => setNoLlegoData((p) => p.map((r, i) => i === idx ? { ...r, noLlego: Number(e.target.value) || 0 } : r))}
-                          className="w-24 rounded-lg border border-[#dfe4e0] bg-white px-2 py-1.5 text-right text-sm text-[#14352a] outline-none focus:border-[#b3261e] focus:ring-1 focus:ring-[#b3261e]/20"
-                        />
+                        <div className="flex items-center justify-end gap-1.5">
+                          <select
+                            value={row.sentido}
+                            onChange={(e) => setNoLlegoData((p) => p.map((r, i) => i === idx ? { ...r, sentido: e.target.value as "contra" | "favor" } : r))}
+                            className="rounded-lg border border-[#dfe4e0] bg-white px-2 py-1.5 text-sm text-[#14352a] outline-none focus:border-[#2f8f4e]"
+                          >
+                            <option value="contra">En contra</option>
+                            <option value="favor">A favor</option>
+                          </select>
+                          <input
+                            type="number" step="any" min="0" value={row.diferencia}
+                            onChange={(e) => setNoLlegoData((p) => p.map((r, i) => i === idx ? { ...r, diferencia: Number(e.target.value) || 0 } : r))}
+                            className={`w-20 rounded-lg border bg-white px-2 py-1.5 text-right text-sm text-[#14352a] outline-none ${row.sentido === "favor" ? "border-[#cfe4d6] focus:border-[#2f8f4e] focus:ring-1 focus:ring-[#2f8f4e]/20" : "border-[#dfe4e0] focus:border-[#b3261e] focus:ring-1 focus:ring-[#b3261e]/20"}`}
+                          />
+                        </div>
                       </td>
                       <td className="py-3 text-right tabular-nums text-sm font-bold text-[#2f8f4e]">
-                        {fmtKg(Math.max(0, row.despachado - row.noLlego))}
+                        {fmtKg(recibidoDe(row))}
                       </td>
                     </tr>
                   ))}

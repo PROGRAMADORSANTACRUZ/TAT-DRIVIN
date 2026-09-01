@@ -30,6 +30,28 @@ const STATUS_COLORS: Record<string, string> = {
 
 function hoy() { return new Date().toISOString().slice(0, 10); }
 
+// Consolida varias líneas de producto de una misma remisión en una sola fila.
+type RemisionRow = { numeroOrden: string; cliente: string; destino: string; cantidadKg: number; enviado: boolean };
+function consolidarRemisiones(ords: Orden[]): RemisionRow[] {
+  const m = new Map<string, RemisionRow>();
+  for (const o of ords) {
+    const ex = m.get(o.numeroOrden);
+    if (ex) {
+      ex.cantidadKg += o.cantidadKg;
+      ex.enviado = ex.enviado && o.estado === "Enviado";
+    } else {
+      m.set(o.numeroOrden, {
+        numeroOrden: o.numeroOrden,
+        cliente: o.cliente,
+        destino: o.destino,
+        cantidadKg: o.cantidadKg,
+        enviado: o.estado === "Enviado",
+      });
+    }
+  }
+  return Array.from(m.values());
+}
+
 type VehOrdenes = {
   vehiculo: VehiculoExterno;
   ordenes: Orden[];
@@ -233,7 +255,7 @@ export default function DiagramaPage() {
         <div>
           <h1 className="text-2xl font-bold text-[#14352a]">Diagrama de asignaciones</h1>
           <p className="text-sm text-[#5f7a68]">
-            {grupos.length} vehículo{grupos.length !== 1 ? "s" : ""} con órdenes · {grupos.reduce((s, g) => s + g.ordenes.length, 0)} órdenes asignadas
+            {grupos.length} vehículo{grupos.length !== 1 ? "s" : ""} con órdenes · {grupos.reduce((s, g) => s + consolidarRemisiones(g.ordenes).length, 0)} remisiones asignadas
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -282,9 +304,11 @@ export default function DiagramaPage() {
       ) : (
         <div className="nice-scroll min-h-0 flex-1 overflow-auto">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {filtrados.map(({ vehiculo: v, ordenes: ords, totalKg, enviadas }) => {
+            {filtrados.map(({ vehiculo: v, ordenes: ords, totalKg }) => {
               const pct = v.capacidad ? Math.min(100, (totalKg / Number(v.capacidad)) * 100) : 0;
               const isChecked = checked.has(v.placa.toUpperCase());
+              const rem = consolidarRemisiones(ords);
+              const remEnviadas = rem.filter((r) => r.enviado).length;
               return (
                 <div key={v.id} className={`flex flex-col overflow-hidden rounded-2xl border shadow-sm transition-shadow hover:shadow-md ${isChecked ? "border-[#2f8f4e] ring-1 ring-[#2f8f4e]/30" : "border-[#e1e9dd]"}`}>
                   <div className="flex items-center gap-3 bg-[#14352a] px-4 py-3">
@@ -301,10 +325,10 @@ export default function DiagramaPage() {
                       <p className="truncate text-sm font-semibold text-white">{v.conductor || "Sin conductor"}</p>
                       <p className="text-xs text-[#a8c9b0]">{v.flotas || v.empleadores || "—"}</p>
                       <p className="text-xs text-[#a8c9b0]">Cap. {v.capacidad ?? "—"} kg</p>
-                      <p className="text-xs text-[#a8c9b0]">{ords.length} órdenes</p>
+                      <p className="text-xs text-[#a8c9b0]">{rem.length} remisiones</p>
                     </div>
-                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${enviadas === ords.length ? "bg-[#2f8f4e] text-white" : "bg-[#e6effb] text-[#1a5fb4]"}`}>
-                      {enviadas}/{ords.length} env.
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${remEnviadas === rem.length ? "bg-[#2f8f4e] text-white" : "bg-[#e6effb] text-[#1a5fb4]"}`}>
+                      {remEnviadas}/{rem.length} env.
                     </span>
                   </div>
 
@@ -329,13 +353,13 @@ export default function DiagramaPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#f0f2ee]">
-                        {ords.map((o) => (
-                          <tr key={o.id} className="hover:bg-[#f9fbf7]">
+                        {rem.map((o) => (
+                          <tr key={o.numeroOrden} className="hover:bg-[#f9fbf7]">
                             <td className="px-4 py-1.5 font-medium text-[#14352a]">{o.numeroOrden}</td>
                             <td className="max-w-[140px] truncate px-4 py-1.5 text-[#45505e]">{tc(o.cliente)} — {tc(o.destino)}</td>
                             <td className="px-4 py-1.5 text-right tabular-nums text-[#14352a]">{o.cantidadKg.toFixed(0)}</td>
                             <td className="px-4 py-1.5">
-                              {o.estado === "Enviado"
+                              {o.enviado
                                 ? <span className="text-[#2f8f4e]">✓</span>
                                 : <span className="inline-flex h-2 w-2 rounded-full bg-[#b5941e]" title="Pendiente de envío" />}
                             </td>

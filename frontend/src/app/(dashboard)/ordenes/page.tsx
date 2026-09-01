@@ -378,6 +378,9 @@ export default function OrdenesPage() {
 
   async function handleEliminarSinRegistrar(c: ClienteSinRegistrar) {
     if (!c.ids || c.ids.length === 0) return;
+    if (!window.confirm(
+      `¿Eliminar ${c.ids.length} ${c.ids.length === 1 ? "orden" : "órdenes"} de "${tc(c.cliente)}"? Esta acción no se puede deshacer.`
+    )) return;
     try {
       const { eliminados } = await eliminarOrdenesPorIds(c.ids);
       setMessage(`Se eliminaron ${eliminados} órdenes de ${tc(c.cliente)}.`);

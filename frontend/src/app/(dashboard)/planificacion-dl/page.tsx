@@ -34,11 +34,11 @@ import { getAuxiliares, getRutas } from "@/lib/api";
 import { docRI, docRIT, imprimirDocumento } from "@/lib/planillaDocs";
 
 // ── Modal de impresión reutilizable ─────────────────────────────────────────
-function ImprimirModal({ planilla, onClose }: { planilla: Planilla; onClose: () => void }) {
+function ImprimirModal({ planilla, onClose, onPrinted }: { planilla: Planilla; onClose: () => void; onPrinted?: () => void }) {
   // Marca como impresa en el backend al imprimir cualquier documento
   async function handleImprimir(doc: () => void) {
     doc();
-    try { await marcarImpresa(planilla.id); } catch { /* silencioso */ }
+    try { await marcarImpresa(planilla.id); onPrinted?.(); } catch { /* silencioso */ }
     onClose();
   }
   return (
@@ -874,7 +874,7 @@ export default function PlanificacionDLPage() {
       )}
 
       {/* Imprimir tras crear */}
-      {creada && <ImprimirModal planilla={creada} onClose={() => setCreada(null)} />}
+      {creada && <ImprimirModal planilla={creada} onClose={() => setCreada(null)} onPrinted={() => load()} />}
 
       {/* Modal: Reporte de cambios */}
       {mostrarCambios && (
@@ -964,7 +964,7 @@ export default function PlanificacionDLPage() {
 
       {/* Imprimir desde tarjeta de plantilla */}
       {imprimiendoPlanilla && (
-        <ImprimirModal planilla={imprimiendoPlanilla} onClose={() => setImprimiendoPlanilla(null)} />
+        <ImprimirModal planilla={imprimiendoPlanilla} onClose={() => setImprimiendoPlanilla(null)} onPrinted={() => load()} />
       )}
 
       {/* Eliminar plantilla completa */}
