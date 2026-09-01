@@ -21,6 +21,7 @@ services:
       DRIVIN_API_URL: ${DRIVIN_API_URL:-https://external.driv.in/api/external}
       DRIVIN_API_KEY: ${DRIVIN_API_KEY}
       CLIENTES_TAT_URL: ${CLIENTES_TAT_URL:-https://apiconsulta.grupo-santacruz.com/clientes-tat}
+      CLIENTES_TAT_TOKEN: ${CLIENTES_TAT_TOKEN}
       TAT_INVOICES_URL: ${TAT_INVOICES_URL}
       TAT_INVOICES_TOKEN: ${TAT_INVOICES_TOKEN}
     restart: unless-stopped

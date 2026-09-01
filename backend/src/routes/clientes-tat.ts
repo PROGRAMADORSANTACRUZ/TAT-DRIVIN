@@ -83,9 +83,13 @@ router.post("/:id/consecutivo", requireAuth, requirePermiso("/configuracion/clie
 // POST /api/clientes-tat/sync  -> actualiza y agrega, respetando ediciones manuales
 router.post("/sync", requireAuth, requirePermiso("/configuracion/clientes"), async (_req, res, next) => {
   try {
-    const resp = await fetch(env.CLIENTES_TAT_URL);
+    // apiconsulta exige token en el query; sin él responde 401.
+    const url = new URL(env.CLIENTES_TAT_URL);
+    if (env.CLIENTES_TAT_TOKEN) url.searchParams.set("token", env.CLIENTES_TAT_TOKEN);
+    const resp = await fetch(url, { signal: AbortSignal.timeout(20000) });
     if (!resp.ok) {
-      throw new HttpError(502, `La API respondió ${resp.status}`);
+      const body = await resp.text().catch(() => "");
+      throw new HttpError(502, `La API respondió ${resp.status}: ${body.slice(0, 150)}`);
     }
 
     const json = (await resp.json()) as { data?: ClienteTatApi[] };
