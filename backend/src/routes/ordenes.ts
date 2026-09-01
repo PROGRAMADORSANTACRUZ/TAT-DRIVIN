@@ -815,13 +815,24 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
     }
 
     const url = env.TAT_INVOICES_URL.replace("{cia}", cia);
-    const resp = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "x-api-key": env.TAT_INVOICES_TOKEN ?? "",
-      },
-      signal: AbortSignal.timeout(15000),
-    });
+    let resp: Response;
+    try {
+      resp = await fetch(url, {
+        headers: {
+          Accept: "application/json",
+          "x-api-key": env.TAT_INVOICES_TOKEN ?? "",
+        },
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch (err) {
+      const cause = (err as { cause?: { code?: string } })?.cause;
+      const detalle =
+        cause?.code ?? (err as Error)?.name ?? (err as Error)?.message ?? "desconocido";
+      throw new HttpError(
+        502,
+        `No se pudo conectar con la API de facturas (${detalle}). URL: ${url}`
+      );
+    }
     if (!resp.ok) {
       const body = await resp.text().catch(() => "");
       throw new HttpError(
