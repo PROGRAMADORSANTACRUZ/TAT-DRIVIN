@@ -5,11 +5,11 @@ import Link from "next/link";
 import {
   ApiError,
   getNovedades,
-  getOrdenes,
   getPlanillas,
+  getResumen,
   getVehiculosExternos,
   type Novedad,
-  type Orden,
+  type OrdenesResumen,
   type Planilla,
   type VehiculoExterno,
 } from "@/lib/api";
@@ -40,11 +40,17 @@ function StatCard({ label, value, sub, color = "#14352a", bg = "bg-white", icon 
   label: string; value: string | number; sub?: string; color?: string; bg?: string; icon?: React.ReactNode;
 }) {
   return (
-    <div className={`flex flex-col gap-1.5 rounded-2xl border border-[#e1e9dd] ${bg} p-5 shadow-sm`}>
-      {icon && <span className="mb-0.5 text-[#7a8794]">{icon}</span>}
-      <p className="text-xs font-medium uppercase tracking-wide text-[#7a8794]">{label}</p>
-      <p className="text-3xl font-bold tabular-nums" style={{ color }}>{value}</p>
-      {sub && <p className="text-xs text-[#7a8794]">{sub}</p>}
+    <div className={`flex items-center justify-between gap-3 rounded-2xl border border-[#e1e9dd] ${bg} px-4 py-3 shadow-sm`}>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <p className="truncate text-[11px] font-medium uppercase tracking-wide text-[#7a8794]">{label}</p>
+        <p className="text-3xl font-bold leading-none tabular-nums" style={{ color }}>{value}</p>
+        {sub && <p className="truncate text-[11px] text-[#7a8794]">{sub}</p>}
+      </div>
+      {icon && (
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f2f5ef] text-[#7a8794]">
+          {icon}
+        </span>
+      )}
     </div>
   );
 }
@@ -156,7 +162,7 @@ const ESTADO_COLOR: Record<string, string> = {
 };
 
 export default function DashboardPage() {
-  const [ordenes, setOrdenes] = useState<Orden[]>([]);
+  const [resumen, setResumen] = useState<OrdenesResumen | null>(null);
   const [planillas, setPlanillas] = useState<Planilla[]>([]);
   const [novedades, setNovedades] = useState<Novedad[]>([]);
   const [vehiculos, setVehiculos] = useState<VehiculoExterno[]>([]);
@@ -166,13 +172,13 @@ export default function DashboardPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [ords, plans, novs, vehs] = await Promise.all([
-        getOrdenes(true),
+      const [res, plans, novs, vehs] = await Promise.all([
+        getResumen(),
         getPlanillas(),
-        getNovedades().catch(() => [] as Novedad[]),
-        getVehiculosExternos().catch(() => [] as VehiculoExterno[]),
+        getNovedades().catch((err) => { console.error(err); return [] as Novedad[]; }),
+        getVehiculosExternos().catch((err) => { console.error(err); return [] as VehiculoExterno[]; }),
       ]);
-      setOrdenes(ords);
+      setResumen(res);
       setPlanillas(plans);
       setNovedades(novs);
       setVehiculos(vehs);
@@ -186,38 +192,20 @@ export default function DashboardPage() {
   }, [load]);
 
   const m = useMemo(() => {
-    // Cada fila de "ordenes" es una línea de producto; se agrupan por numeroOrden
-    // para contar ÓRDENES reales (no líneas). Los kg se suman de todas las líneas.
-    const porOrden = new Map<string, { estado: string; asignadoVehiculo: string | null; distribucion: string; reenviado: boolean; kg: number }>();
-    for (const o of ordenes) {
-      const g = porOrden.get(o.numeroOrden);
-      if (g) {
-        g.kg += o.cantidadKg;
-        if (o.asignadoVehiculo) g.asignadoVehiculo = o.asignadoVehiculo;
-        if (o.reenviado) g.reenviado = true;
-        if (o.estado === "Entregado" || o.estado === "Rechazado") g.estado = o.estado;
-      } else {
-        porOrden.set(o.numeroOrden, {
-          estado: o.estado,
-          asignadoVehiculo: o.asignadoVehiculo ?? null,
-          distribucion: o.distribucion,
-          reenviado: !!o.reenviado,
-          kg: o.cantidadKg,
-        });
-      }
-    }
-    const ords = [...porOrden.values()];
-
-    // Órdenes (por numeroOrden único)
-    const vivas     = ords.filter((o) => o.estado !== "Entregado" && o.estado !== "Rechazado");
-    const asignadas = vivas.filter((o) => o.asignadoVehiculo);
-    const sinAsig   = vivas.filter((o) => !o.asignadoVehiculo);
-    const enviadas  = vivas.filter((o) => o.estado === "Enviado");
-    const entregadas= ords.filter((o) => o.estado === "Entregado");
-    const rechazadas= ords.filter((o) => o.estado === "Rechazado");
-    const reenviadas= ords.filter((o) => o.reenviado);
-    const kilosVivas= vivas.reduce((s, o) => s + o.kg, 0);
-    const kilosEnv  = enviadas.reduce((s, o) => s + o.kg, 0);
+    // Métricas de órdenes agregadas en el backend (evita traer miles de filas).
+    const vivas      = resumen?.vivas ?? 0;
+    const asignadas  = resumen?.asignadas ?? 0;
+    const sinAsig    = resumen?.sinAsig ?? 0;
+    const enviadas   = resumen?.enviadas ?? 0;
+    const entregadas = resumen?.entregadas ?? 0;
+    const rechazadas = resumen?.rechazadas ?? 0;
+    const reenviadas = resumen?.reenviadas ?? 0;
+    const kilosVivas = resumen?.kilosVivas ?? 0;
+    const kilosEnv   = resumen?.kilosEnviadas ?? 0;
+    const totalOrdenes = resumen?.totalOrdenes ?? 0;
+    const tat  = resumen?.tat ?? 0;
+    const agro = resumen?.agro ?? 0;
+    const conCarga = resumen?.vehiculosConCarga ?? 0;
 
     // Planillas
     const planillasHoy    = planillas.filter((p) => esHoy(p.createdAt) && !p.anulada);
@@ -233,9 +221,13 @@ export default function DashboardPage() {
       return { label: labelDia(fecha), value: ps.length, kg: ps.reduce((s, p) => s + p.kilos, 0) };
     });
 
-    // Distribución
-    const tat  = vivas.filter((o) => o.distribucion === "TAT").length;
-    const agro = vivas.filter((o) => o.distribucion !== "TAT").length;
+    // Capacidad por placa (kg) desde la flota externa.
+    const capPorPlaca = new Map<string, number>();
+    for (const v of vehiculos) {
+      const cap = v.capacidadReal ? parseFloat(v.capacidadReal) : v.capacidad ? parseFloat(v.capacidad) : 0;
+      if (cap > 0) capPorPlaca.set(v.placa.toUpperCase(), cap);
+    }
+
     // Top vehículos kg hoy
     const porPlaca = new Map<string, { kg: number; docs: number }>();
     for (const p of planillasHoy) {
@@ -246,14 +238,20 @@ export default function DashboardPage() {
     const topPlacas = Array.from(porPlaca.entries())
       .sort((a, b) => b[1].kg - a[1].kg)
       .slice(0, 7)
-      .map(([label, v]) => ({ label, value: Math.round(v.kg), sub: `${fmtKg(v.kg)} kg · ${v.docs}d` }));
+      .map(([label, v]) => {
+        const cap = capPorPlaca.get(label.toUpperCase()) ?? 0;
+        const pct = cap > 0 ? Math.round((v.kg / cap) * 100) : 0;
+        return { label, value: Math.round(v.kg), cap, pct, sub: cap > 0 ? `${fmtKg(v.kg)} kg · ${pct}%` : `${fmtKg(v.kg)} kg` };
+      });
 
     // Vehículos
     const activos   = vehiculos.filter((v) => v.estado === "Activo");
-    const conCarga  = new Set(asignadas.map((o) => o.asignadoVehiculo)).size;
 
     // Capacidad total vs cargado
     const capTotal  = activos.reduce((s, v) => s + (v.capacidadReal ? parseFloat(v.capacidadReal) : v.capacidad ? parseFloat(v.capacidad) : 0), 0);
+    // Ocupación de flota hoy: kg cargados vs capacidad de los vehículos con planilla.
+    const capEnRuta = Array.from(porPlaca.keys()).reduce((s, placa) => s + (capPorPlaca.get(placa.toUpperCase()) ?? 0), 0);
+    const pctOcupacion = capEnRuta > 0 ? Math.round((kilosHoy / capEnRuta) * 100) : 0;
 
     // Novedades
     const novConNov  = novedades.filter((n) => n.estadoEntrega === "Con Novedad").length;
@@ -282,11 +280,11 @@ export default function DashboardPage() {
 
     return {
       // Órdenes
-      totalOrdenes: ords.length, vivas: vivas.length, asignadas: asignadas.length,
-      sinAsig: sinAsig.length, enviadas: enviadas.length, entregadas: entregadas.length,
-      rechazadas: rechazadas.length, reenviadas: reenviadas.length,
+      totalOrdenes, vivas, asignadas,
+      sinAsig, enviadas, entregadas,
+      rechazadas, reenviadas,
       kilosVivas, kilosEnv,
-      pctAsig: vivas.length > 0 ? Math.round((asignadas.length / vivas.length) * 100) : 0,
+      pctAsig: vivas > 0 ? Math.round((asignadas / vivas) * 100) : 0,
       // Planillas
       planillasHoy: planillasHoy.length, planillasAnulHoy: planillasAnulHoy.length,
       planillasImprHoy: planillasImprHoy.length, sinImpHoy, kilosHoy,
@@ -295,17 +293,18 @@ export default function DashboardPage() {
       tat, agro,
       // Vehículos
       activos: activos.length, conCarga, capTotal,
+      capEnRuta, pctOcupacion,
       topPlacas,
       // Novedades
       novConNov, novPendDoc, novReenvio, novSinNov,
       topNovedades, topResp, topDespachosNov,
       totalNovedades: novedades.length,
     };
-  }, [ordenes, planillas, novedades, vehiculos]);
+  }, [resumen, planillas, novedades, vehiculos]);
 
   return (
-    <div className="flex h-full flex-col overflow-auto p-6 sm:p-8">
-      <header className="mb-6 flex shrink-0 flex-wrap items-center justify-between gap-3">
+    <div className="flex h-full flex-col overflow-auto p-3 sm:p-4">
+      <header className="mb-2.5 flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[#14352a]">Dashboard</h1>
           <p className="text-sm text-[#5f7a68]">Resumen operativo en tiempo real · Santa Cruz</p>
@@ -324,10 +323,10 @@ export default function DashboardPage() {
       {loading ? (
         <div className="flex flex-1"><PageLoader /></div>
       ) : (
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-2.5">
 
-          {/* -"€-"€ Row 1: KPIs principales -"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€ */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+          {/* Row 1: KPIs principales */}
+          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5">
             <StatCard label="Órdenes activas" value={fmtN(m.vivas)} sub={`${fmtKg(m.kilosVivas)} kg total`}
               icon={<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>} />
             <StatCard label="Sin asignar" value={fmtN(m.sinAsig)} sub="pendientes de vehículo"
@@ -346,91 +345,99 @@ export default function DashboardPage() {
               icon={<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>} />
           </div>
 
-          {/* -"€-"€ Row 2: Gráficos principales -"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€ */}
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-
-            {/* Donut -€" Estado de órdenes */}
-            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-5 shadow-sm">
-              <h2 className="mb-3 text-sm font-semibold text-[#14352a]">Estado de órdenes</h2>
-              <div className="flex items-center gap-4">
-                <div className="w-32 shrink-0">
-                  <DonutChart
-                    centerLabel={fmtN(m.vivas)}
-                    centerSub="activas"
-                    segments={[
-                      { label: "Sin asignar", value: m.sinAsig, color: "#f0d9b0" },
-                      { label: "Asignadas", value: m.asignadas - m.enviadas, color: "#b5941e" },
-                      { label: "Enviadas", value: m.enviadas, color: "#1a5fb4" },
-                      { label: "Entregadas", value: m.entregadas, color: "#2f8f4e" },
-                      { label: "Rechazadas", value: m.rechazadas, color: "#b3261e" },
-                    ].filter((s) => s.value > 0)}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5 text-xs">
-                  {[
-                    { l: "Sin asignar", v: m.sinAsig, c: "#f0d9b0" },
-                    { l: "Asignadas", v: m.asignadas - m.enviadas, c: "#b5941e" },
-                    { l: "Enviadas", v: m.enviadas, c: "#1a5fb4" },
-                    { l: "Entregadas", v: m.entregadas, c: "#2f8f4e" },
-                    { l: "Rechazadas", v: m.rechazadas, c: "#b3261e" },
-                  ].map((x) => (
-                    <div key={x.l} className="flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: x.c }} />
-                      <span className="text-[#5f7a68]">{x.l}</span>
-                      <span className="ml-auto font-semibold tabular-nums text-[#14352a]">{fmtN(x.v)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Barras verticales -€" últimos 7 días */}
-            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-5 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-[#14352a]">Planillas últimos 7 días</h2>
-                <span className="text-xs text-[#7a8794]">total: {m.dias7.reduce((s, d) => s + d.value, 0)}</span>
-              </div>
-              <SparkBars data={m.dias7} />
-            </div>
-
-            {/* Rings -€" capacidad y asignación */}
-            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-5 shadow-sm">
-              <h2 className="mb-3 text-sm font-semibold text-[#14352a]">Vehículos y capacidad</h2>
-              <div className="flex justify-around">
-                <RingProgress value={m.conCarga} max={m.activos} color="#2f8f4e" label={`${m.conCarga}/${m.activos} en ruta`} />
-                <RingProgress value={m.asignadas} max={m.vivas} color="#1a5fb4" label={`${m.pctAsig}% asignado`} />
-                <RingProgress value={m.planillasImprHoy} max={m.planillasHoy} color="#b5941e" label={`${m.planillasHoy > 0 ? Math.round((m.planillasImprHoy / m.planillasHoy) * 100) : 0}% impresas`} />
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs text-[#7a8794]">
-                <div><p className="text-lg font-bold text-[#14352a]">{m.activos}</p><p>vehículos</p></div>
-                <div><p className="text-lg font-bold text-[#14352a]">{m.reenviadas}</p><p>reenviadas</p></div>
-                <div><p className="text-lg font-bold text-[#14352a]">{m.rechazadas}</p><p>rechazadas</p></div>
-              </div>
-            </div>
+          {/* Fila 0: Accesos rápidos (botones pill debajo de los KPIs) */}
+          <div className="flex flex-nowrap gap-2 overflow-x-auto">
+            {[
+              { href: "/asignacion-vehiculos", label: "Asignación de órdenes", sub: `${m.sinAsig} sin asignar`, color: "bg-[#f7faf5]" },
+              { href: "/planificacion-dl", label: "Planificación D.L.", sub: `${m.sinImpHoy} sin imprimir hoy`, color: "bg-[#f7faf5]" },
+              { href: "/nivel-de-servicio", label: "Nivel de servicio", sub: `${m.novConNov} con novedad`, color: m.novConNov > 0 ? "bg-[#fbeceb]" : "bg-[#f7faf5]" },
+              { href: "/planes", label: "Diagrama", sub: `${m.conCarga} vehículos en ruta`, color: "bg-[#f7faf5]" },
+              { href: "/ordenes", label: "Cargar órdenes", sub: `${m.totalOrdenes} en el sistema`, color: "bg-[#f7faf5]" },
+            ].map((item) => (
+              <Link key={item.href} href={item.href} className={`flex min-w-0 flex-1 items-center justify-center gap-2 rounded-full border border-[#e1e9dd] ${item.color} px-3 py-2 transition-all hover:border-[#2f8f4e] hover:shadow-sm`}>
+                <span className="truncate text-xs font-semibold text-[#14352a]">{item.label}</span>
+                <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium text-[#7a8794]">{item.sub}</span>
+              </Link>
+            ))}
           </div>
 
-          {/* -"€-"€ Row 3: Rankings -"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€ */}
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          {/* Fila 1: Nivel de servicio · Despachos con más novedades · Responsabilidades */}
+          <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-3">
 
-            {/* Top vehículos kg hoy */}
-            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-5 shadow-sm">
+            {/* Nivel de servicio */}
+            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-[#14352a]">Top vehículos hoy (kg)</h2>
-                <Link href="/planificacion-dl" className="text-[10px] font-medium text-[#2f8f4e] hover:underline">Ver planillas →</Link>
+                <h2 className="text-sm font-semibold text-[#14352a]">Nivel de servicio</h2>
+                <Link href="/nivel-de-servicio" className="text-[10px] font-medium text-[#2f8f4e] hover:underline">Ver detalle →</Link>
               </div>
-              {m.topPlacas.length === 0 ? (
-                <p className="text-sm text-[#7a8794]">Sin planillas hoy.</p>
+              {m.totalNovedades === 0 ? (
+                <div className="flex h-32 items-center justify-center text-sm text-[#7a8794]">Sin registros</div>
+              ) : (
+                <>
+                  <div className="mb-4 flex justify-around">
+                    {[
+                      { l: "Sin nov.", v: m.novSinNov, c: "#2f8f4e" },
+                      { l: "Con nov.", v: m.novConNov, c: "#b3261e" },
+                      { l: "Doc.Pend.", v: m.novPendDoc, c: "#a86a12" },
+                      { l: "Reenvío", v: m.novReenvio, c: "#4a6fa5" },
+                    ].map((x) => (
+                      <div key={x.l} className="flex flex-col items-center gap-0.5">
+                        <span className="text-xl font-bold tabular-nums" style={{ color: x.c }}>{x.v}</span>
+                        <span className="text-[10px] text-[#7a8794]">{x.l}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {m.topNovedades.length > 0 && (
+                    <>
+                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[#7a8794]">Tipos frecuentes</p>
+                      <div className="flex flex-col gap-1.5">
+                        {m.topNovedades.slice(0, 4).map(([label, value]) => (
+                          <HBar key={label} label={label} value={value} max={m.topNovedades[0][1]} color="#b3261e" />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Despachos con más novedades */}
+            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-[#14352a]">Despachos con más novedades</h2>
+                <Link href="/nivel-de-servicio" className="text-[10px] font-medium text-[#2f8f4e] hover:underline">Ver →</Link>
+              </div>
+              {m.topDespachosNov.length === 0 ? (
+                <div className="flex h-32 items-center justify-center text-sm text-[#7a8794]">Sin registros</div>
               ) : (
                 <div className="flex flex-col gap-2.5">
-                  {m.topPlacas.map((d) => (
-                    <HBar key={d.label} label={d.label} value={d.value} max={m.topPlacas[0].value} sub={`${fmtKg(d.value)} kg`} />
+                  {m.topDespachosNov.map(([label, value]) => (
+                    <HBar key={label} label={label} value={value} max={m.topDespachosNov[0][1]} color="#b3261e" />
                   ))}
                 </div>
               )}
             </div>
 
+            {/* Responsabilidades de novedades */}
+            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-4 shadow-sm">
+              <h2 className="mb-3 text-sm font-semibold text-[#14352a]">Responsabilidades de novedades</h2>
+              {m.topResp.length === 0 ? (
+                <div className="flex h-32 items-center justify-center text-sm text-[#7a8794]">Sin registros</div>
+              ) : (
+                <div className="flex flex-col gap-2.5">
+                  {m.topResp.map(([label, value]) => (
+                    <HBar key={label} label={label} value={value} max={m.topResp[0][1]} color="#a86a12" />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Fila 2: Distribución · Estado de órdenes · Plantillas últimos 7 días */}
+          <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-3">
+
             {/* Distribución TAT vs Agropecuaria */}
-            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-5 shadow-sm">
+            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-4 shadow-sm">
               <h2 className="mb-3 text-sm font-semibold text-[#14352a]">Distribución de carga activa</h2>
               <div className="flex items-center gap-4">
                 <div className="w-32 shrink-0">
@@ -469,92 +476,123 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Nivel de servicio */}
-            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-5 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-[#14352a]">Nivel de servicio</h2>
-                <Link href="/nivel-de-servicio" className="text-[10px] font-medium text-[#2f8f4e] hover:underline">Ver detalle →</Link>
+            {/* Donut — Estado de órdenes */}
+            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-4 shadow-sm">
+              <h2 className="mb-3 text-sm font-semibold text-[#14352a]">Estado de órdenes</h2>
+              <div className="flex items-center gap-4">
+                <div className="w-32 shrink-0">
+                  <DonutChart
+                    centerLabel={fmtN(m.vivas)}
+                    centerSub="activas"
+                    segments={[
+                      { label: "Sin asignar", value: m.sinAsig, color: "#f0d9b0" },
+                      { label: "Asignadas", value: m.asignadas - m.enviadas, color: "#b5941e" },
+                      { label: "Enviadas", value: m.enviadas, color: "#1a5fb4" },
+                      { label: "Entregadas", value: m.entregadas, color: "#2f8f4e" },
+                      { label: "Rechazadas", value: m.rechazadas, color: "#b3261e" },
+                    ].filter((s) => s.value > 0)}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5 text-xs">
+                  {[
+                    { l: "Sin asignar", v: m.sinAsig, c: "#f0d9b0" },
+                    { l: "Asignadas", v: m.asignadas - m.enviadas, c: "#b5941e" },
+                    { l: "Enviadas", v: m.enviadas, c: "#1a5fb4" },
+                    { l: "Entregadas", v: m.entregadas, c: "#2f8f4e" },
+                    { l: "Rechazadas", v: m.rechazadas, c: "#b3261e" },
+                  ].map((x) => (
+                    <div key={x.l} className="flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: x.c }} />
+                      <span className="text-[#5f7a68]">{x.l}</span>
+                      <span className="ml-auto font-semibold tabular-nums text-[#14352a]">{fmtN(x.v)}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              {m.totalNovedades === 0 ? (
-                <div className="flex h-32 items-center justify-center text-sm text-[#7a8794]">Sin registros</div>
-              ) : (
-                <>
-                  <div className="mb-4 flex justify-around">
-                    {[
-                      { l: "Sin nov.", v: m.novSinNov, c: "#2f8f4e" },
-                      { l: "Con nov.", v: m.novConNov, c: "#b3261e" },
-                      { l: "Doc.Pend.", v: m.novPendDoc, c: "#a86a12" },
-                      { l: "Reenvío", v: m.novReenvio, c: "#4a6fa5" },
-                    ].map((x) => (
-                      <div key={x.l} className="flex flex-col items-center gap-0.5">
-                        <span className="text-xl font-bold tabular-nums" style={{ color: x.c }}>{x.v}</span>
-                        <span className="text-[10px] text-[#7a8794]">{x.l}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {m.topNovedades.length > 0 && (
-                    <>
-                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[#7a8794]">Tipos frecuentes</p>
-                      <div className="flex flex-col gap-1.5">
-                        {m.topNovedades.slice(0, 4).map(([label, value]) => (
-                          <HBar key={label} label={label} value={value} max={m.topNovedades[0][1]} color="#b3261e" />
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
+            </div>
+
+            {/* Barras verticales — últimos 7 días */}
+            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-[#14352a]">Planillas últimos 7 días</h2>
+                <span className="text-xs text-[#7a8794]">total: {m.dias7.reduce((s, d) => s + d.value, 0)}</span>
+              </div>
+              <SparkBars data={m.dias7} />
             </div>
           </div>
 
-          {/* -"€-"€ Row 4: Responsabilidades + accesos rápidos -"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€ */}
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          {/* Fila 3: Vehículos y capacidad · Top vehículos (% carga) · Ocupación de flota */}
+          <div className="grid grid-cols-1 items-stretch gap-2.5 lg:grid-cols-3">
 
-            {/* Top responsabilidades */}
-            {m.topResp.length > 0 && (
-              <div className="rounded-2xl border border-[#e1e9dd] bg-white p-5 shadow-sm">
-                <h2 className="mb-3 text-sm font-semibold text-[#14352a]">Responsabilidades de novedades</h2>
+            {/* Rings — capacidad y asignación */}
+            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-4 shadow-sm">
+              <h2 className="mb-3 text-sm font-semibold text-[#14352a]">Vehículos y capacidad</h2>
+              <div className="flex justify-around">
+                <RingProgress value={m.conCarga} max={m.activos} color="#2f8f4e" label={`${m.conCarga}/${m.activos} en ruta`} />
+                <RingProgress value={m.asignadas} max={m.vivas} color="#1a5fb4" label={`${m.pctAsig}% asignado`} />
+                <RingProgress value={m.planillasImprHoy} max={m.planillasHoy} color="#b5941e" label={`${m.planillasHoy > 0 ? Math.round((m.planillasImprHoy / m.planillasHoy) * 100) : 0}% impresas`} />
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs text-[#7a8794]">
+                <div><p className="text-lg font-bold text-[#14352a]">{m.activos}</p><p>vehículos</p></div>
+                <div><p className="text-lg font-bold text-[#14352a]">{m.reenviadas}</p><p>reenviadas</p></div>
+                <div><p className="text-lg font-bold text-[#14352a]">{m.rechazadas}</p><p>rechazadas</p></div>
+              </div>
+            </div>
+
+            {/* Top vehículos hoy con % de carga */}
+            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-[#14352a]">Top vehículos hoy (% carga)</h2>
+                <Link href="/planificacion-dl" className="text-[10px] font-medium text-[#2f8f4e] hover:underline">Ver planillas →</Link>
+              </div>
+              {m.topPlacas.length === 0 ? (
+                <p className="text-sm text-[#7a8794]">Sin planillas hoy.</p>
+              ) : (
                 <div className="flex flex-col gap-2.5">
-                  {m.topResp.map(([label, value]) => (
-                    <HBar key={label} label={label} value={value} max={m.topResp[0][1]} color="#a86a12" />
-                  ))}
+                  {m.topPlacas.map((d) => {
+                    const barColor = d.pct >= 90 ? "#b3261e" : d.pct >= 70 ? "#a86a12" : "#2f8f4e";
+                    const width = d.cap > 0 ? Math.min(100, d.pct) : (d.value / m.topPlacas[0].value) * 100;
+                    return (
+                      <div key={d.label} className="flex items-center gap-3">
+                        <span className="w-16 shrink-0 truncate text-xs font-medium text-[#45505e]">{d.label}</span>
+                        <div className="h-3 flex-1 overflow-hidden rounded-full bg-[#f2f5ef]">
+                          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${width}%`, background: barColor }} />
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <span className="text-xs font-semibold tabular-nums text-[#14352a]">{fmtKg(d.value)}</span>
+                          {d.cap > 0 && <span className="ml-1 text-[10px] font-semibold" style={{ color: barColor }}>{d.pct}%</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
-            {/* Despachos con más novedades */}
-            {m.topDespachosNov.length > 0 && (
-              <div className="rounded-2xl border border-[#e1e9dd] bg-white p-5 shadow-sm">
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-sm font-semibold text-[#14352a]">Despachos con más novedades</h2>
-                  <Link href="/nivel-de-servicio" className="text-[10px] font-medium text-[#2f8f4e] hover:underline">Ver →</Link>
-                </div>
-                <div className="flex flex-col gap-2.5">
-                  {m.topDespachosNov.map(([label, value]) => (
-                    <HBar key={label} label={label} value={value} max={m.topDespachosNov[0][1]} color="#b3261e" />
-                  ))}
-                </div>
+            {/* Ocupación de flota hoy (kg cargados vs capacidad) */}
+            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-[#14352a]">Ocupación de flota hoy</h2>
+                <span className="text-[10px] text-[#7a8794]">{m.conCarga} en ruta</span>
               </div>
-            )}
-
-            {/* Accesos rápidos */}
-            <div className="rounded-2xl border border-[#e1e9dd] bg-white p-5 shadow-sm">
-              <h2 className="mb-3 text-sm font-semibold text-[#14352a]">Accesos rápidos</h2>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { href: "/asignacion-vehiculos", label: "Asignación de órdenes", sub: `${m.sinAsig} sin asignar`, color: "bg-[#f7faf5]" },
-                  { href: "/planificacion-dl", label: "Planificación D.L.", sub: `${m.sinImpHoy} sin imprimir hoy`, color: "bg-[#f7faf5]" },
-                  { href: "/nivel-de-servicio", label: "Nivel de servicio", sub: `${m.novConNov} con novedad`, color: m.novConNov > 0 ? "bg-[#fbeceb]" : "bg-[#f7faf5]" },
-                  { href: "/planes", label: "Diagrama", sub: `${m.conCarga} vehículos en ruta`, color: "bg-[#f7faf5]" },
-                  { href: "/historicos", label: "Históricos", sub: `${planillas.length} plantillas totales`, color: "bg-[#f7faf5]" },
-                  { href: "/ordenes", label: "Cargar órdenes", sub: `${m.totalOrdenes} en el sistema`, color: "bg-[#f7faf5]" },
-                ].map((item) => (
-                  <Link key={item.href} href={item.href} className={`flex flex-col gap-1 rounded-xl border border-[#e1e9dd] ${item.color} p-3 transition-all hover:border-[#2f8f4e] hover:shadow-sm`}>
-                    <span className="text-xs font-semibold text-[#14352a]">{item.label}</span>
-                    <span className="text-[10px] text-[#7a8794]">{item.sub}</span>
-                  </Link>
-                ))}
-              </div>
+              {m.capEnRuta === 0 ? (
+                <div className="flex h-24 items-center justify-center text-center text-sm text-[#7a8794]">Sin capacidad registrada para los vehículos en ruta.</div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-4xl font-bold tabular-nums" style={{ color: m.pctOcupacion >= 90 ? "#b3261e" : m.pctOcupacion >= 70 ? "#a86a12" : "#2f8f4e" }}>{m.pctOcupacion}%</span>
+                    <span className="text-xs text-[#7a8794]">capacidad utilizada</span>
+                  </div>
+                  <div className="h-4 w-full overflow-hidden rounded-full bg-[#f2f5ef]">
+                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${Math.min(100, m.pctOcupacion)}%`, background: m.pctOcupacion >= 90 ? "#b3261e" : m.pctOcupacion >= 70 ? "#a86a12" : "#2f8f4e" }} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs text-[#7a8794]">
+                    <div><p className="text-sm font-bold text-[#14352a]">{fmtKg(m.kilosHoy)}</p><p>kg cargados</p></div>
+                    <div><p className="text-sm font-bold text-[#14352a]">{fmtKg(m.capEnRuta)}</p><p>kg capacidad</p></div>
+                    <div><p className="text-sm font-bold text-[#14352a]">{fmtKg(Math.max(0, m.capEnRuta - m.kilosHoy))}</p><p>kg disponible</p></div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

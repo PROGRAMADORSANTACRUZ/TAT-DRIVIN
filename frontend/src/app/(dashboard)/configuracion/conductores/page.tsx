@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { tc, btn } from "@/lib/utils";
 import SearchInput from "@/components/SearchInput";
-import { getAuxiliares, saveAuxiliares, AUXILIARES_BASE, type Auxiliar } from "@/data/planillaConfig";
+import { AUXILIARES_BASE, type Auxiliar } from "@/data/planillaConfig";
 import {
   ApiError,
   createConductor,
   deleteConductor,
+  getAuxiliares,
   getConductores,
+  saveAuxiliares,
   setConductorEstado,
   syncConductores,
   updateConductor,
@@ -229,13 +231,32 @@ let _auxNextId = 5000;
 function newAuxId() { return `aux-${++_auxNextId}-${Date.now()}`; }
 
 function AuxiliaresModal({ onClose }: { onClose: () => void }) {
-  const [lista, setLista] = useState<Auxiliar[]>(() => getAuxiliares());
+  const [lista, setLista] = useState<Auxiliar[]>([]);
   const [buscar, setBuscar] = useState("");
   const [editando, setEditando] = useState<Auxiliar | null>(null);
   const [creando, setCreando] = useState(false);
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAuxiliares()
+      .then((data) => setLista(data as Auxiliar[]))
+      .catch((err) => { console.error(err); setError("No se pudieron cargar los auxiliares"); });
+  }, []);
+
+  async function persistir(next: Auxiliar[]) {
+    setLista(next);
+    try {
+      const guardado = await saveAuxiliares(next);
+      setLista(guardado as Auxiliar[]);
+      setError(null);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo guardar. Intenta de nuevo.");
+    }
+  }
 
   function guardar() {
     if (!nombre.trim()) return;
@@ -246,8 +267,7 @@ function AuxiliaresModal({ onClose }: { onClose: () => void }) {
       next = [...lista, { id: newAuxId(), nombre: nombre.trim(), telefono: telefono.trim() || undefined }];
     }
     next = next.sort((a, b) => a.nombre.localeCompare(b.nombre));
-    setLista(next);
-    saveAuxiliares(next);
+    void persistir(next);
     setEditando(null);
     setCreando(false);
     setNombre(""); setTelefono("");
@@ -257,7 +277,7 @@ function AuxiliaresModal({ onClose }: { onClose: () => void }) {
 
   function iniciarEditar(a: Auxiliar) { setEditando(a); setNombre(a.nombre); setTelefono(a.telefono ?? ""); setCreando(false); }
   function iniciarCrear() { setEditando(null); setNombre(""); setTelefono(""); setCreando(true); }
-  function eliminar(id: string) { const next = lista.filter((a) => a.id !== id); setLista(next); saveAuxiliares(next); }
+  function eliminar(id: string) { void persistir(lista.filter((a) => a.id !== id)); }
 
   const filtrado = lista.filter((a) => !buscar || a.nombre.toLowerCase().includes(buscar.toLowerCase()));
 
@@ -268,7 +288,8 @@ function AuxiliaresModal({ onClose }: { onClose: () => void }) {
           <h3 className="text-lg font-semibold text-[#14352a]">Auxiliares de ruta</h3>
           <div className="flex items-center gap-2">
             {saved && <span className="text-xs text-[#2f8f4e]">✓ Guardado</span>}
-            <button onClick={() => { setLista(AUXILIARES_BASE); saveAuxiliares(AUXILIARES_BASE); }} className="text-xs text-[#7a8794] hover:text-[#45505e]">Restaurar</button>
+            {error && <span className="text-xs text-[#b3261e]">{error}</span>}
+            <button onClick={() => { void persistir(AUXILIARES_BASE); }} className="text-xs text-[#7a8794] hover:text-[#45505e]">Restaurar</button>
             <button onClick={iniciarCrear} className="inline-flex items-center gap-1 rounded-lg bg-[#2f8f4e] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#277a42]">
               <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Nuevo

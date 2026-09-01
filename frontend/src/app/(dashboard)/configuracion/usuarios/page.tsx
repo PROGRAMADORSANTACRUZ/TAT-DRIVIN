@@ -12,6 +12,7 @@ import {
 } from "@/lib/api";
 import { btn, btnSm } from "@/lib/utils";
 import SearchInput from "@/components/SearchInput";
+import { MODULOS, TODOS_LOS_MODULOS } from "@/data/modulos";
 
 const ROLE_LABELS: Record<string, string> = {
   USER: "Usuario",
@@ -25,7 +26,7 @@ const ROLE_COLORS: Record<string, string> = {
   DEVELOPER: "bg-[#e8f3e2] text-[#2f8f4e]",
 };
 
-const EMPTY: AppUserInput = { cedula: "", name: "", role: "USER", password: "" };
+const EMPTY: AppUserInput = { cedula: "", name: "", role: "USER", password: "", permisos: [] };
 
 export default function UsuariosPage() {
   const [users, setUsers] = useState<AppUser[]>([]);
@@ -64,7 +65,7 @@ export default function UsuariosPage() {
   }
 
   function openEdit(u: AppUser) {
-    setForm({ cedula: u.cedula, name: u.name ?? "", role: u.role, password: "" });
+    setForm({ cedula: u.cedula, name: u.name ?? "", role: u.role, password: "", permisos: u.permisos ?? [] });
     setModal({ open: true, editing: u });
   }
 
@@ -115,7 +116,7 @@ export default function UsuariosPage() {
     ? users.filter((u) => [u.cedula, u.name, u.role].some((f) => f?.toLowerCase().includes(t)))
     : users;
 
-  const set = (k: keyof AppUserInput, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  const set = <K extends keyof AppUserInput>(k: K, v: AppUserInput[K]) => setForm((p) => ({ ...p, [k]: v }));
 
   return (
     <div className="flex h-full flex-col p-6 sm:p-8">
@@ -213,13 +214,13 @@ export default function UsuariosPage() {
 
       {modal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeModal}>
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="border-b border-[#eceef0] px-6 py-4">
+          <div className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="shrink-0 border-b border-[#eceef0] px-6 py-4">
               <h3 className="text-lg font-semibold text-[#14352a]">
                 {modal.editing ? "Editar usuario" : "Nuevo usuario"}
               </h3>
             </div>
-            <div className="flex flex-col gap-4 px-6 py-5">
+            <div className="nice-scroll flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-6 py-5">
               <Field label="Nombre completo *">
                 <input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Juan Pérez" className="input-base" />
               </Field>
@@ -227,7 +228,7 @@ export default function UsuariosPage() {
                 <input value={form.cedula} onChange={(e) => set("cedula", e.target.value.replace(/\D/g, ""))} placeholder="1234567890" inputMode="numeric" className="input-base" />
               </Field>
               <Field label="Rol">
-                <select value={form.role} onChange={(e) => set("role", e.target.value)} className="input-base">
+                <select value={form.role} onChange={(e) => set("role", e.target.value as AppUserInput["role"])} className="input-base">
                   <option value="USER">Usuario</option>
                   <option value="ADMIN">Administrador</option>
                   <option value="DEVELOPER">Desarrollador</option>
@@ -242,11 +243,49 @@ export default function UsuariosPage() {
                   className="input-base"
                 />
               </Field>
+              {/* Permisos por módulo (los ADMIN/DEVELOPER tienen acceso total) */}
+              <div className="rounded-xl border border-[#e1e9dd] bg-[#fbfdfa] p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wide text-[#2f8f4e]">Permisos por módulo</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => set("permisos", [...TODOS_LOS_MODULOS])} className="text-[11px] font-medium text-[#2f8f4e] hover:underline">Todos</button>
+                    <button type="button" onClick={() => set("permisos", [])} className="text-[11px] font-medium text-[#7a8794] hover:underline">Ninguno</button>
+                  </div>
+                </div>
+                {form.role === "ADMIN" || form.role === "DEVELOPER" ? (
+                  <p className="text-xs text-[#7a8794]">Este rol tiene acceso a todos los módulos.</p>
+                ) : (
+                  (["Operación", "Configuración"] as const).map((grupo) => (
+                    <div key={grupo} className="mb-2 last:mb-0">
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#a6b0a9]">{grupo}</p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {MODULOS.filter((m) => m.grupo === grupo).map((m) => {
+                          const marcado = (form.permisos ?? []).includes(m.key);
+                          return (
+                            <label key={m.key} className="flex items-center gap-2 text-xs text-[#45505e]">
+                              <input
+                                type="checkbox"
+                                checked={marcado}
+                                onChange={(e) => {
+                                  const actuales = form.permisos ?? [];
+                                  set("permisos", e.target.checked ? [...actuales, m.key] : actuales.filter((k) => k !== m.key));
+                                }}
+                                className="h-4 w-4 accent-[#2f8f4e]"
+                              />
+                              {m.label}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
               {error && (
                 <p className="rounded-lg bg-[#fbeceb] px-3 py-2 text-sm text-[#b3261e]">{error}</p>
               )}
             </div>
-            <div className="flex justify-end gap-2 border-t border-[#eceef0] px-6 py-4">
+            <div className="flex shrink-0 justify-end gap-2 border-t border-[#eceef0] px-6 py-4">
               <button onClick={closeModal} className="rounded-lg border border-[#dfe4e0] px-4 py-2.5 text-sm font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]">
                 Cancelar
               </button>

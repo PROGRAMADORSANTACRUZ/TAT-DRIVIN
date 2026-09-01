@@ -54,7 +54,7 @@ export function docNovedad(n: Novedad): string {
         <p>Agropecuaria Santacruz Ltda.</p>
       </div>
       <div class="meta">
-        <div><b>No.</b> ${String(n.consecutivo).padStart(5, "0")}</div>
+        <div><b>No.</b> RN-${String(n.consecutivo).padStart(5, "0")}</div>
         <div>${esc(fechaLarga(n.createdAt))}</div>
       </div>
     </div>
@@ -70,7 +70,7 @@ export function docNovedad(n: Novedad): string {
       ${fila("Auxiliar de ruta", n.auxiliarRuta ?? "")}
       ${fila("Cliente / Destino", n.cliente ?? "")}
       ${fila("No. documento / orden", n.numeroOrden ?? "")}
-      ${fila("Plan (DL) #", n.planillaId ? String(n.consecutivo).padStart(5,"0") : "")}
+      ${fila("Plan (DL)", n.planillaId ? `DL-${String(n.consecutivo).padStart(5,"0")}` : "")}
     </table>
 
     <div class="sec">Descripción / Detalles</div>

@@ -5,6 +5,12 @@ export function tc(value: unknown): string {
     .trim();
 }
 
+// Etiqueta de consecutivo de planilla (distribución logística): DL-00010
+export const dlLabel = (n: number | string) => `DL-${String(n).padStart(5, "0")}`;
+
+// Etiqueta de consecutivo de reporte de novedad: RN-00010
+export const rnLabel = (n: number | string) => `RN-${String(n).padStart(5, "0")}`;
+
 // Estilo unificado de botones: blanco con borde (como el botón "Actualizar").
 // btn: tamaño normal. btnSm: acciones compactas (tablas). btnFull: sin icono.
 export const btn =

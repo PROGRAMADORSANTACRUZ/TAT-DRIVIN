@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { HttpError } from "../middleware/errorHandler";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requirePermiso } from "../middleware/auth";
 
 import { env } from "../config/env";
 
@@ -56,7 +56,7 @@ router.get("/", requireAuth, async (_req, res, next) => {
 });
 
 // POST /api/conductores
-router.post("/", requireAuth, async (req, res, next) => {
+router.post("/", requireAuth, requirePermiso("/configuracion/conductores"), async (req, res, next) => {
   try {
     const parsed = conductorSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -80,7 +80,7 @@ router.post("/", requireAuth, async (req, res, next) => {
 });
 
 // PUT /api/conductores/:id
-router.put("/:id", requireAuth, async (req, res, next) => {
+router.put("/:id", requireAuth, requirePermiso("/configuracion/conductores"), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const parsed = conductorSchema.safeParse(req.body);
@@ -113,7 +113,7 @@ router.put("/:id", requireAuth, async (req, res, next) => {
 });
 
 // PATCH /api/conductores/:id/estado  { activo }
-router.patch("/:id/estado", requireAuth, async (req, res, next) => {
+router.patch("/:id/estado", requireAuth, requirePermiso("/configuracion/conductores"), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const activo = req.body?.activo;
@@ -139,7 +139,7 @@ router.patch("/:id/estado", requireAuth, async (req, res, next) => {
 });
 
 // POST /api/conductores/sync  -> importa conductores desde el endpoint de drivers de Drivin
-router.post("/sync", requireAuth, async (_req, res, next) => {
+router.post("/sync", requireAuth, requirePermiso("/configuracion/conductores"), async (_req, res, next) => {
   try {
     if (!env.DRIVIN_API_KEY) throw new HttpError(500, "Falta DRIVIN_API_KEY");
 
@@ -165,6 +165,19 @@ router.post("/sync", requireAuth, async (_req, res, next) => {
     let creados = 0;
     let actualizados = 0;
 
+    // Precarga todos los conductores una sola vez y arma índices en memoria (evita N+1).
+    const existentes = await prisma.conductor.findMany();
+    const porCorreo = new Map<string, (typeof existentes)[number]>();
+    const porCedula = new Map<string, (typeof existentes)[number]>();
+    const porNombre = new Map<string, (typeof existentes)[number]>();
+    for (const c of existentes) {
+      if (c.correo) porCorreo.set(c.correo.toLowerCase(), c);
+      if (c.cedula) porCedula.set(c.cedula, c);
+      porNombre.set(`${c.nombres}||${c.apellidos}`.toLowerCase(), c);
+    }
+
+    const nuevos: { nombres: string; apellidos: string; correo: string | null; celular: string | null; perfil: string; depositos: string | null; clientes: string | null; activo: boolean; cedula: string | null }[] = [];
+
     for (const d of data.response ?? []) {
       const cedula = d.dni?.trim() || null;
       const correo = d.email?.trim() || null;
@@ -186,14 +199,10 @@ router.post("/sync", requireAuth, async (_req, res, next) => {
       };
 
       // La llave de relación es el correo. Orden: correo -> cédula -> nombre+apellido.
-      let exists = correo
-        ? await prisma.conductor.findFirst({ where: { correo } })
-        : null;
-      if (!exists && cedula) {
-        exists = await prisma.conductor.findFirst({ where: { cedula } });
-      }
+      let exists = correo ? porCorreo.get(correo.toLowerCase()) : undefined;
+      if (!exists && cedula) exists = porCedula.get(cedula);
       if (!exists && !correo && !cedula) {
-        exists = await prisma.conductor.findFirst({ where: { nombres, apellidos } });
+        exists = porNombre.get(`${nombres}||${apellidos}`.toLowerCase());
       }
 
       if (exists) {
@@ -203,9 +212,16 @@ router.post("/sync", requireAuth, async (_req, res, next) => {
         });
         actualizados++;
       } else {
-        await prisma.conductor.create({ data: { ...datos, cedula } });
+        nuevos.push({ ...datos, cedula });
+        // Evita duplicados dentro del mismo lote entrante.
+        if (correo) porCorreo.set(correo.toLowerCase(), { ...datos, cedula } as (typeof existentes)[number]);
+        if (cedula) porCedula.set(cedula, { ...datos, cedula } as (typeof existentes)[number]);
         creados++;
       }
+    }
+
+    if (nuevos.length) {
+      await prisma.conductor.createMany({ data: nuevos });
     }
 
     res.status(201).json({
@@ -219,7 +235,7 @@ router.post("/sync", requireAuth, async (_req, res, next) => {
 });
 
 // DELETE /api/conductores/:id
-router.delete("/:id", requireAuth, async (req, res, next) => {
+router.delete("/:id", requireAuth, requirePermiso("/configuracion/conductores"), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const current = await prisma.conductor.findUnique({ where: { id } });

@@ -12,6 +12,7 @@ const userSchema = z.object({
   name: z.string().trim().min(1, "Nombre requerido"),
   role: z.enum(["USER", "ADMIN", "DEVELOPER"]).default("USER"),
   password: z.string().min(4, "Contraseña mínimo 4 caracteres").optional(),
+  permisos: z.array(z.string()).optional().nullable(),
 });
 
 const SELECT = {
@@ -19,9 +20,15 @@ const SELECT = {
   cedula: true,
   name: true,
   role: true,
+  permisos: true,
   createdAt: true,
   updatedAt: true,
 };
+
+// Convierte el permisos (JSON string) a array para la respuesta.
+function mapUser<T extends { permisos: string | null }>(u: T) {
+  return { ...u, permisos: u.permisos ? (JSON.parse(u.permisos) as string[]) : null };
+}
 
 // GET /api/users
 router.get("/", requireAuth, async (_req, res, next) => {
@@ -30,7 +37,7 @@ router.get("/", requireAuth, async (_req, res, next) => {
       select: SELECT,
       orderBy: [{ name: "asc" }],
     });
-    res.json(users);
+    res.json(users.map(mapUser));
   } catch (err) {
     next(err);
   }
@@ -49,10 +56,16 @@ router.post("/", requireAuth, async (req, res, next) => {
 
     const hash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
-      data: { cedula, name, role, password: hash },
+      data: {
+        cedula,
+        name,
+        role,
+        password: hash,
+        permisos: parsed.data.permisos ? JSON.stringify(parsed.data.permisos) : null,
+      },
       select: SELECT,
     });
-    res.status(201).json(user);
+    res.status(201).json(mapUser(user));
   } catch (err) {
     next(err);
   }
@@ -74,9 +87,12 @@ router.put("/:id", requireAuth, async (req, res, next) => {
 
     const data: Record<string, unknown> = { cedula, name, role };
     if (password) data.password = await bcrypt.hash(password, 10);
+    if (parsed.data.permisos !== undefined) {
+      data.permisos = parsed.data.permisos ? JSON.stringify(parsed.data.permisos) : null;
+    }
 
     const user = await prisma.user.update({ where: { id }, data, select: SELECT });
-    res.json(user);
+    res.json(mapUser(user));
   } catch (err) {
     next(err);
   }

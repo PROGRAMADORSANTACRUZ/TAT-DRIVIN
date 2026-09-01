@@ -108,7 +108,7 @@ function encabezado(p: Planilla): string {
       <td class="b" style="width:17%">Fecha de Despacho:</td>
       <td class="center" style="width:33%">${esc(fechaCorta(p.fecha))}</td>
       <td class="b" style="width:17%">Consecutivo No.</td>
-      <td class="center b">${String(p.consecutivo).padStart(5, "0")}</td>
+      <td class="center b">DL-${String(p.consecutivo).padStart(5, "0")}</td>
     </tr>
   </table>`;
 }

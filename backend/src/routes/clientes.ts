@@ -3,7 +3,7 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { prisma } from "../lib/prisma";
 import { HttpError } from "../middleware/errorHandler";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requirePermiso } from "../middleware/auth";
 import {
   fetchDrivinAddresses,
   buildAddressIndex,
@@ -190,7 +190,7 @@ router.get("/", requireAuth, async (_req, res, next) => {
 });
 
 // POST /api/clientes/auto-consecutivos  -> cruza y asigna consecutivos en lote
-router.post("/auto-consecutivos", requireAuth, async (_req, res, next) => {
+router.post("/auto-consecutivos", requireAuth, requirePermiso("/configuracion/clientes"), async (_req, res, next) => {
   try {
     const result = await asignarConsecutivosAuto();
     res.json(result);
@@ -200,7 +200,7 @@ router.post("/auto-consecutivos", requireAuth, async (_req, res, next) => {
 });
 
 // POST /api/clientes  -> crea un cliente individual (desde el flujo de órdenes)
-router.post("/", requireAuth, async (req, res, next) => {
+router.post("/", requireAuth, requirePermiso("/configuracion/clientes"), async (req, res, next) => {
   try {
     const body = req.body ?? {};
     const data: Record<string, string | boolean | null> = {};
@@ -226,7 +226,7 @@ router.post("/", requireAuth, async (req, res, next) => {
 });
 
 // POST /api/clientes/:id/consecutivo  -> asigna un consecutivo a un cliente existente
-router.post("/:id/consecutivo", requireAuth, async (req, res, next) => {
+router.post("/:id/consecutivo", requireAuth, requirePermiso("/configuracion/clientes"), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const nuevo = String(req.body?.consecutivo ?? "").trim();
@@ -253,6 +253,7 @@ router.post("/:id/consecutivo", requireAuth, async (req, res, next) => {
 router.post(
   "/import",
   requireAuth,
+  requirePermiso("/configuracion/clientes"),
   upload.single("file"),
   async (req, res, next) => {
     try {
@@ -278,7 +279,7 @@ router.post(
 );
 
 // PUT /api/clientes/:id  -> actualiza los campos editables
-router.put("/:id", requireAuth, async (req, res, next) => {
+router.put("/:id", requireAuth, requirePermiso("/configuracion/clientes"), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const body = req.body ?? {};
@@ -319,9 +320,12 @@ router.put("/:id", requireAuth, async (req, res, next) => {
   }
 });
 
-// DELETE /api/clientes
-router.delete("/", requireAuth, async (_req, res, next) => {
+// DELETE /api/clientes  -> borra TODO el maestro de clientes (solo administradores)
+router.delete("/", requireAuth, async (req, res, next) => {
   try {
+    if (req.user?.role !== "ADMIN" && req.user?.role !== "DEVELOPER") {
+      throw new HttpError(403, "Eliminar todos los clientes requiere rol administrador");
+    }
     const { count } = await prisma.cliente.deleteMany();
     res.json({ eliminados: count });
   } catch (err) {

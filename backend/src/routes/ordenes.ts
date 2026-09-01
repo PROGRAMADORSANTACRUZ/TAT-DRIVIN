@@ -3,7 +3,7 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { prisma } from "../lib/prisma";
 import { HttpError } from "../middleware/errorHandler";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requirePermiso } from "../middleware/auth";
 import { env } from "../config/env";
 import {
   fetchDrivinAddresses,
@@ -364,6 +364,58 @@ router.get("/", requireAuth, async (req, res, next) => {
   }
 });
 
+// GET /api/ordenes/resumen  -> métricas agregadas por ORDEN (numeroOrden único) para el dashboard.
+// Evita enviar miles de líneas al cliente; el agregado se hace en el servidor.
+router.get("/resumen", requireAuth, async (_req, res, next) => {
+  try {
+    const filas = await prisma.orden.findMany({
+      select: { numeroOrden: true, estado: true, asignadoVehiculo: true, distribucion: true, reenviado: true, cantidadKg: true },
+    });
+    // Agrupa líneas por numeroOrden.
+    const porOrden = new Map<string, { estado: string; asignadoVehiculo: string | null; distribucion: string; reenviado: boolean; kg: number }>();
+    for (const o of filas) {
+      const g = porOrden.get(o.numeroOrden);
+      if (g) {
+        g.kg += o.cantidadKg;
+        if (o.asignadoVehiculo) g.asignadoVehiculo = o.asignadoVehiculo;
+        if (o.reenviado) g.reenviado = true;
+        if (o.estado === "Entregado" || o.estado === "Rechazado") g.estado = o.estado;
+      } else {
+        porOrden.set(o.numeroOrden, {
+          estado: o.estado,
+          asignadoVehiculo: o.asignadoVehiculo ?? null,
+          distribucion: o.distribucion,
+          reenviado: !!o.reenviado,
+          kg: o.cantidadKg,
+        });
+      }
+    }
+    const ords = [...porOrden.values()];
+    const vivas = ords.filter((o) => o.estado !== "Entregado" && o.estado !== "Rechazado");
+    const asignadas = vivas.filter((o) => o.asignadoVehiculo);
+    const enviadas = vivas.filter((o) => o.estado === "Enviado");
+    const vehiculosConCarga = new Set(asignadas.map((o) => o.asignadoVehiculo)).size;
+
+    res.json({
+      totalOrdenes: ords.length,
+      vivas: vivas.length,
+      asignadas: asignadas.length,
+      sinAsig: vivas.length - asignadas.length,
+      enviadas: enviadas.length,
+      entregadas: ords.filter((o) => o.estado === "Entregado").length,
+      rechazadas: ords.filter((o) => o.estado === "Rechazado").length,
+      reenviadas: ords.filter((o) => o.reenviado).length,
+      kilosVivas: vivas.reduce((s, o) => s + o.kg, 0),
+      kilosEnviadas: enviadas.reduce((s, o) => s + o.kg, 0),
+      tat: vivas.filter((o) => o.distribucion === "TAT").length,
+      agro: vivas.filter((o) => o.distribucion !== "TAT").length,
+      vehiculosConCarga,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Clave normalizada para cruzar clientes (sin acentos, mayúsculas, sin espacios extra).
 function claveCliente(s: unknown): string {
   return String(s ?? "")
@@ -495,6 +547,7 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
 router.post(
   "/import",
   requireAuth,
+  requirePermiso("/ordenes"),
   upload.single("file"),
   async (req, res, next) => {
     try {
@@ -614,7 +667,7 @@ async function enviarPodDrivin(payload: {
 }
 
 // POST /api/ordenes/reenviar  -> reenvía órdenes rechazadas a Drivin
-router.post("/reenviar", requireAuth, async (req, res, next) => {
+router.post("/reenviar", requireAuth, requirePermiso("/nivel-de-servicio"), async (req, res, next) => {
   try {
     const ids: unknown = req.body?.ids;
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -706,7 +759,7 @@ router.post("/reenviar", requireAuth, async (req, res, next) => {
 });
 
 // POST /api/ordenes/asignar  -> asigna (o quita) órdenes a un vehículo
-router.post("/asignar", requireAuth, async (req, res, next) => {
+router.post("/asignar", requireAuth, requirePermiso("/asignacion-vehiculos"), async (req, res, next) => {
   try {
     const ids: unknown = req.body?.ids;
     const placa: unknown = req.body?.placa;
@@ -745,7 +798,7 @@ const TAT_ORIGENES: Record<string, string> = {
   INVERSIONES: "8",
 };
 
-router.post("/sync-tat", requireAuth, async (req, res, next) => {
+router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, res, next) => {
   try {
     const origen = String(req.body?.origen ?? "AGROPECUARIA").toUpperCase();
     const cia = TAT_ORIGENES[origen];
@@ -840,6 +893,11 @@ router.delete("/", requireAuth, async (req, res, next) => {
       where = { distribucion: "AGROPECUARIA" };
     } else if (tipo === "TAT") {
       where = { distribucion: "TAT" };
+    } else {
+      // Sin tipo = borra TODAS las órdenes: solo administradores.
+      if (req.user?.role !== "ADMIN" && req.user?.role !== "DEVELOPER") {
+        throw new HttpError(403, "Eliminar todas las órdenes requiere rol administrador");
+      }
     }
     const { count } = await prisma.orden.deleteMany({ where });
     res.json({ eliminados: count });
@@ -850,7 +908,7 @@ router.delete("/", requireAuth, async (req, res, next) => {
 
 // POST /api/ordenes/sync-drivin-estado
 // Consulta Drivin por los escenarios del día y actualiza el estado de órdenes Enviadas
-router.post("/sync-drivin-estado", requireAuth, async (_req, res, next) => {
+router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servicio"), async (_req, res, next) => {
   try {
     const DRIVIN_HEADERS = () => ({
       "X-API-Key": env.DRIVIN_API_KEY ?? "",
@@ -891,6 +949,21 @@ router.post("/sync-drivin-estado", requireAuth, async (_req, res, next) => {
       if (s.includes("partial")) return "Parcial Con Novedad";
       return null;
     }
+
+    // Precarga novedades de las planillas activas (evita N+1 dentro del loop).
+    const planillaIds = planillasActivas.map((p) => p.id);
+    const novedadesExistentes = planillaIds.length
+      ? await prisma.novedad.findMany({ where: { planillaId: { in: planillaIds } } })
+      : [];
+    const novedadPorClave = new Map<string, (typeof novedadesExistentes)[number]>();
+    for (const n of novedadesExistentes) {
+      if (n.planillaId && n.numeroOrden) novedadPorClave.set(`${n.planillaId}||${n.numeroOrden}`, n);
+    }
+    const nuevasNovedades: {
+      consecutivo: number; fecha: string; estadoEntrega: string; novedad: string | null;
+      planillaId: string; placa: string | null; conductor: string | null;
+      auxiliarRuta: string | null; cliente: string | null; numeroOrden: string;
+    }[] = [];
 
     let actualizados = 0;
     const detalle: { token: string; status: string; ordenes: number }[] = [];
@@ -939,9 +1012,7 @@ router.post("/sync-drivin-estado", requireAuth, async (_req, res, next) => {
         const nivelEstado = nivelDesdeDrivin(drivinOrden.status);
         const planilla = planillaPorOrden.get(code);
         if (nivelEstado && planilla) {
-          const existente = await prisma.novedad.findFirst({
-            where: { planillaId: planilla.id, numeroOrden: code },
-          });
+          const existente = novedadPorClave.get(`${planilla.id}||${code}`);
           if (existente) {
             // No pisar un estado ya trabajado manualmente distinto de "Sin Novedad".
             if (existente.estadoEntrega === "Sin Novedad" || existente.estadoEntrega === nivelEstado) {
@@ -954,25 +1025,29 @@ router.post("/sync-drivin-estado", requireAuth, async (_req, res, next) => {
               });
             }
           } else {
-            await prisma.novedad.create({
-              data: {
-                consecutivo: planilla.consecutivo,
-                fecha: planilla.fecha,
-                estadoEntrega: nivelEstado,
-                novedad: drivinOrden.reason_name ?? null,
-                planillaId: planilla.id,
-                placa: planilla.placa,
-                conductor: planilla.conductor,
-                auxiliarRuta: planilla.auxiliarRuta,
-                cliente: planilla.itemCliente ?? null,
-                numeroOrden: code,
-              },
+            nuevasNovedades.push({
+              consecutivo: planilla.consecutivo,
+              fecha: planilla.fecha,
+              estadoEntrega: nivelEstado,
+              novedad: drivinOrden.reason_name ?? null,
+              planillaId: planilla.id,
+              placa: planilla.placa,
+              conductor: planilla.conductor,
+              auxiliarRuta: planilla.auxiliarRuta,
+              cliente: planilla.itemCliente ?? null,
+              numeroOrden: code,
             });
+            // Evita duplicados si el mismo code aparece en varios escenarios.
+            novedadPorClave.set(`${planilla.id}||${code}`, { estadoEntrega: nivelEstado } as (typeof novedadesExistentes)[number]);
           }
         }
       }
 
       detalle.push({ token: esc.token, status: esc.status ?? "", ordenes: ordenesDrivin.size });
+    }
+
+    if (nuevasNovedades.length) {
+      await prisma.novedad.createMany({ data: nuevasNovedades });
     }
 
     res.json({ actualizados, escenarios: detalle.length, detalle });

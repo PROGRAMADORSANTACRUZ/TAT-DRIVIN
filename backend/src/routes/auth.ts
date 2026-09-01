@@ -48,6 +48,7 @@ router.post("/register", async (req, res, next) => {
       sub: user.id,
       cedula: user.cedula,
       role: user.role,
+      permisos: null,
     });
 
     res.status(201).json({
@@ -83,11 +84,18 @@ router.post("/login", async (req, res, next) => {
       sub: user.id,
       cedula: user.cedula,
       role: user.role,
+      permisos: user.permisos ? (JSON.parse(user.permisos) as string[]) : null,
     });
 
     res.json({
       token,
-      user: { id: user.id, cedula: user.cedula, name: user.name, role: user.role },
+      user: {
+        id: user.id,
+        cedula: user.cedula,
+        name: user.name,
+        role: user.role,
+        permisos: user.permisos ? (JSON.parse(user.permisos) as string[]) : null,
+      },
     });
   } catch (err) {
     next(err);
@@ -99,14 +107,14 @@ router.get("/me", requireAuth, async (req, res, next) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user!.sub },
-      select: { id: true, cedula: true, name: true, role: true, createdAt: true },
+      select: { id: true, cedula: true, name: true, role: true, permisos: true, createdAt: true },
     });
 
     if (!user) {
       throw new HttpError(404, "Usuario no encontrado");
     }
 
-    res.json({ user });
+    res.json({ user: { ...user, permisos: user.permisos ? (JSON.parse(user.permisos) as string[]) : null } });
   } catch (err) {
     next(err);
   }

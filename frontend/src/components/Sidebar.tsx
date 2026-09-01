@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { clearSession, getUser, type AuthUser } from "@/lib/api";
+import { puedeAcceder } from "@/data/modulos";
 
 interface NavItem {
   href: string;
@@ -215,7 +216,7 @@ export default function Sidebar() {
       {/* Navegación */}
       <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
         <div className="space-y-0.5">
-          {navItems.map((item) => {
+          {navItems.filter((item) => puedeAcceder(item.href, user?.role, user?.permisos)).map((item) => {
             const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`) && !item.children);
             const anyChildActive = item.children?.some((c) => pathname === c.href || pathname.startsWith(`${c.href}/`));
             const isDropOpen = openDropdowns[item.href] ?? anyChildActive ?? false;
@@ -262,6 +263,8 @@ export default function Sidebar() {
 
         {navGroups.map((group) => {
           const isOpen = open[group.label];
+          const visibleItems = group.items.filter((item) => puedeAcceder(item.href, user?.role, user?.permisos));
+          if (visibleItems.length === 0) return null;
           return (
             <div key={group.label}>
               <button
@@ -284,7 +287,7 @@ export default function Sidebar() {
 
               {isOpen && (
                 <div className="mt-1 space-y-0.5">
-                  {group.items.map((item) => {
+                  {visibleItems.map((item) => {
                     const active =
                       pathname === item.href ||
                       pathname.startsWith(`${item.href}/`);

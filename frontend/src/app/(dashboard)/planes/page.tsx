@@ -8,6 +8,7 @@ import {
   getFlotas,
   getOrdenes,
   getPlanes,
+  getPlanNombres,
   getSchemas,
   getVehiculosExternos,
   type Orden,
@@ -17,7 +18,6 @@ import {
 } from "@/lib/api";
 import { tc } from "@/lib/utils";
 import { SkeletonVehicleCard } from "@/components/Loading";
-import { getPlanNombres } from "@/app/(dashboard)/configuracion/plan-nombres/page";
 
 const fmtKg = (n: number) => n.toLocaleString("es-CO", { maximumFractionDigits: 0 });
 
@@ -156,15 +156,12 @@ export default function DiagramaPage() {
     setShowPlanes(true);
     setLoadingPlanes(true);
     try { setPlanes(await getPlanes(planesDate)); }
-    catch { /* */ }
+    catch (err) { console.error(err); }
     finally { setLoadingPlanes(false); }
   }
 
   function abrirCrearPlan() {
-    const nombres = getPlanNombres().map((p) => p.nombre);
-    setNombresPlan(nombres);
     setPlanFecha(hoy());
-    setPlanBase(nombres[0] ?? "Distribucion TAT");
     setPlanModo("nuevo");
     setPlanTokenSel("");
     setPlanesExistentes([]);
@@ -172,14 +169,21 @@ export default function DiagramaPage() {
     // Si los vehículos seleccionados traen una sola flota, se fija automáticamente.
     setPlanFlota(flotasSeleccionadas.length === 1 ? flotasSeleccionadas[0] : "");
     setPlanModal(true);
+    getPlanNombres()
+      .then((data) => {
+        const nombres = data.map((p) => p.nombre);
+        setNombresPlan(nombres);
+        setPlanBase(nombres[0] ?? "Distribucion TAT");
+      })
+      .catch((err) => { console.error(err); setNombresPlan([]); setPlanBase("Distribucion TAT"); });
     const DEFAULTS = ["Distribucion Rutas Agropecuaria", "Distribucion Rutas TAT"];
-    getSchemas().then((s) => setSchemas([...new Set([...DEFAULTS, ...s])].sort())).catch(() => {});
-    getFlotas().then((f) => setFlotas(f)).catch(() => {});
+    getSchemas().then((s) => setSchemas([...new Set([...DEFAULTS, ...s])].sort())).catch((err) => console.error(err));
+    getFlotas().then((f) => setFlotas(f)).catch((err) => console.error(err));
     getPlanes(hoy()).then((ps) => {
       const activos = ps.filter((p) => p.status !== "Finished");
       setPlanesExistentes(activos);
       if (activos.length > 0) setPlanTokenSel(activos[0].token);
-    }).catch(() => {});
+    }).catch((err) => console.error(err));
   }
 
   async function handleEnviarDrivin() {
@@ -363,7 +367,7 @@ export default function DiagramaPage() {
                 <input type="date" value={planesDate} onChange={async (e) => {
                   setPlanesDate(e.target.value);
                   setLoadingPlanes(true);
-                  try { setPlanes(await getPlanes(e.target.value)); } catch { /* */ } finally { setLoadingPlanes(false); }
+                  try { setPlanes(await getPlanes(e.target.value)); } catch (err) { console.error(err); } finally { setLoadingPlanes(false); }
                 }} className="rounded-lg border border-[#dfe4e0] bg-white px-2 py-1.5 text-sm text-[#14352a] outline-none focus:border-[#2f8f4e]" />
                 <button onClick={() => setShowPlanes(false)} className="rounded-lg p-1.5 text-[#7a8794] hover:bg-[#f4f6f3]">
                   <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

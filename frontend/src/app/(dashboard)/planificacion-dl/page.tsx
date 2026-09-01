@@ -1,22 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { tc, btn } from "@/lib/utils";
+import { tc, btn, dlLabel } from "@/lib/utils";
 import SearchInput from "@/components/SearchInput";
 import { PageLoader, SkeletonCard, SkeletonPlanillaCard } from "@/components/Loading";
 import {
   ApiError,
   anularPlanilla,
   asignarOrdenes,
+  addCambio,
   crearPlanilla,
   editarPlanilla,
+  getCambios,
   getClientes,
   getOrdenes,
   getPlanillas,
   getVehiculosExternos,
+  limpiarCambiosHechos,
+  marcarCambioHecho,
   marcarImpresa,
   verificarClientesOrdenes,
+  type CambioDespacho,
   type Cliente,
   type Orden,
   type Planilla,
@@ -24,7 +29,8 @@ import {
   type VehiculoExterno,
   type AnularPlanillaOverride,
 } from "@/lib/api";
-import { AUXILIARES, RUTAS, TIPOS_DESPACHO, getAuxiliares, getRutas } from "@/data/planillaConfig";
+import { AUXILIARES, RUTAS, TIPOS_DESPACHO } from "@/data/planillaConfig";
+import { getAuxiliares, getRutas } from "@/lib/api";
 import { docRI, docRIT, imprimirDocumento } from "@/lib/planillaDocs";
 
 // ── Modal de impresión reutilizable ─────────────────────────────────────────
@@ -46,7 +52,7 @@ function ImprimirModal({ planilla, onClose }: { planilla: Planilla; onClose: () 
           </span>
           <div>
             <h3 className="text-base font-semibold text-[#14352a]">Imprimir documentos</h3>
-            <p className="text-xs text-[#7a8794]">Plantilla #{String(planilla.consecutivo).padStart(5, "0")} · {planilla.placa}</p>
+            <p className="text-xs text-[#7a8794]">Plantilla {dlLabel(planilla.consecutivo)} · {planilla.placa}</p>
           </div>
         </div>
         <p className="mb-4 text-sm text-[#5f7a68]">¿Qué deseas imprimir?</p>
@@ -208,10 +214,10 @@ export default function PlanificacionDLPage() {
     })();
   }, [load]);
 
-  // Cargar auxiliares y rutas desde localStorage (pueden haber sido editados en /configuracion)
+  // Cargar auxiliares y rutas desde la base de datos (config /api/config/*)
   useEffect(() => {
-    setAuxiliaresLS(getAuxiliares());
-    setRutasLS(getRutas());
+    getAuxiliares().then((data) => setAuxiliaresLS(data as typeof AUXILIARES)).catch((err) => console.error(err));
+    getRutas().then((data) => setRutasLS(data as typeof RUTAS)).catch((err) => console.error(err));
   }, []);
 
   const despachos = useMemo(() => agruparDespachos(ordenes, vehiculos), [ordenes, vehiculos]);
@@ -226,6 +232,40 @@ export default function PlanificacionDLPage() {
     () => new Set(planillasHoy.filter((p) => !p.anulada).map((p) => p.placa.toUpperCase())),
     [planillasHoy]
   );
+
+  // Consecutivo que se asignaría a la próxima planilla.
+  const proximoConsecutivo = useMemo(
+    () => planillas.reduce((m, p) => Math.max(m, p.consecutivo), 0) + 1,
+    [planillas]
+  );
+
+  // Planillas de hoy pendientes de imprimir/reimprimir (no impresas y no anuladas).
+  const sinImprimir = useMemo(
+    () => planillasHoy.filter((p) => !p.impresa && !p.anulada),
+    [planillasHoy]
+  );
+
+  // Modal de alerta de reimpresión: se abre automáticamente cuando aparecen pendientes.
+  const [alertaReimprimir, setAlertaReimprimir] = useState(false);
+  const alertaFirmaRef = useRef("");
+  useEffect(() => {
+    if (loading) return;
+    const firma = sinImprimir.map((p) => p.id).sort().join(",");
+    if (firma && firma !== alertaFirmaRef.current) {
+      alertaFirmaRef.current = firma;
+      setAlertaReimprimir(true);
+    }
+    if (!firma) alertaFirmaRef.current = "";
+  }, [loading, sinImprimir]);
+
+  // Reporte de cambios (movimientos entre vehículos, anulaciones, reimpresiones).
+  const [cambios, setCambios] = useState<CambioDespacho[]>([]);
+  const [mostrarCambios, setMostrarCambios] = useState(false);
+  const refrescarCambios = useCallback(() => {
+    getCambios().then(setCambios).catch((err) => console.error(err));
+  }, []);
+  useEffect(() => { refrescarCambios(); }, [refrescarCambios]);
+  const cambiosPendientes = cambios.filter((c) => !c.hecho).length;
 
   const despachosFiltrados = useMemo(() => {
     const t = buscarDespacho.trim().toLowerCase();
@@ -354,8 +394,8 @@ export default function PlanificacionDLPage() {
       setEliminando(null);
       setMessage(
         destino === "liberar"
-          ? `Planilla #${p.consecutivo} anulada. La carga volvió a asignación de órdenes.`
-          : `Planilla #${p.consecutivo} anulada. Carga reasignada al vehículo ${destino}.`
+          ? `Planilla ${dlLabel(p.consecutivo)} anulada. La carga volvió a asignación de órdenes.`
+          : `Planilla ${dlLabel(p.consecutivo)} anulada. Carga reasignada al vehículo ${destino}.`
       );
       await load();
     } catch (err) {
@@ -382,9 +422,18 @@ export default function PlanificacionDLPage() {
       }
       // Anula la original y crea la nueva planilla (con los datos nuevos si los hay).
       const { nueva } = await anularPlanilla(conf.planilla.id, conf.override);
+      await addCambio({
+        tipo: "anulacion",
+        deVehiculo: conf.planilla.placa,
+        aVehiculo: conf.override?.placa ?? conf.planilla.placa,
+        dlOrigen: conf.planilla.consecutivo,
+        dlNuevo: nueva.consecutivo,
+        detalle: `Planilla anulada y regenerada`,
+      });
+      refrescarCambios();
       setConfirmandoAnulacion(null);
       setMessage(
-        `Planilla #${conf.planilla.consecutivo} anulada. Se creó la #${nueva.consecutivo}. Imprímela.`
+        `Planilla ${dlLabel(conf.planilla.consecutivo)} anulada. Se creó la ${dlLabel(nueva.consecutivo)}. Imprímela.`
       );
       await load();
       // Abre la nueva para imprimir.
@@ -422,14 +471,29 @@ export default function PlanificacionDLPage() {
           await asignarOrdenes(eliminandoItem.ids, destino);
           // Anular la planilla del destino (trigger automático de reimprimir)
           await anularPlanilla(planillaImprDestinoHoy.id);
+          await addCambio({
+            tipo: "movimiento",
+            remision: eliminandoItem.numeroOrden,
+            deVehiculo: eliminandoItem.vehiculoActual,
+            aVehiculo: destino,
+            dlOrigen: planillaImprDestinoHoy.consecutivo,
+            detalle: "Remisión movida a vehículo con planilla impresa (reimprimir)",
+          });
+          refrescarCambios();
           setEliminandoItem(null);
           setDestinoItem("");
-          setMessage(`Remisión movida a ${destino}. La planilla #${planillaImprDestinoHoy.consecutivo} fue anulada y se creó una nueva. Reimprimir.`);
+          setMessage(`Remisión movida a ${destino}. La planilla ${dlLabel(planillaImprDestinoHoy.consecutivo)} fue anulada y se creó una nueva. Reimprimir.`);
           await load();
           return;
         }
       }
       await asignarOrdenes(eliminandoItem.ids, destino === "liberar" ? null : destino);
+      await addCambio(
+        destino === "liberar"
+          ? { tipo: "liberacion", remision: eliminandoItem.numeroOrden, deVehiculo: eliminandoItem.vehiculoActual, detalle: "Remisión devuelta a asignación" }
+          : { tipo: "movimiento", remision: eliminandoItem.numeroOrden, deVehiculo: eliminandoItem.vehiculoActual, aVehiculo: destino, detalle: "Remisión movida a otro vehículo" }
+      );
+      refrescarCambios();
       setEliminandoItem(null);
       setDestinoItem("");
       await load();
@@ -446,7 +510,7 @@ export default function PlanificacionDLPage() {
     <div className="flex h-full flex-col overflow-hidden p-6 sm:p-8">
       <header className="mb-5 flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-[#14352a]">Planificación D.L.</h1>
+          <h1 className="text-2xl font-bold text-[#14352a]">Planificación de Distribución Logística</h1>
           <p className="text-sm text-[#5f7a68]">
             Genera la planilla de cada vehículo que sale a ruta hoy.
           </p>
@@ -465,6 +529,16 @@ export default function PlanificacionDLPage() {
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
             Ver históricos
           </Link>
+          <button
+            onClick={() => setMostrarCambios(true)}
+            className="relative inline-flex items-center gap-2 rounded-lg border border-[#dfe4e0] bg-white px-4 py-2.5 text-sm font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+            Reporte de cambios
+            {cambiosPendientes > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#b3261e] px-1 text-[10px] font-bold text-white">{cambiosPendientes}</span>
+            )}
+          </button>
         </div>
       </header>
 
@@ -562,10 +636,17 @@ export default function PlanificacionDLPage() {
                     {histFiltrado.map((p) => (
                       <div key={p.id} className={`flex flex-col rounded-xl border p-2.5 ${p.anulada ? "border-[#f0c4c1] bg-[#fbeceb] opacity-70" : "border-[#e1e9dd] bg-[#f9fbf7]"}`}>
                         <div className="mb-1 flex flex-wrap items-center gap-1">
-                          <span className="text-[10px] font-bold text-[#7a8794]">#{String(p.consecutivo).padStart(5, "0")}</span>
+                          <span className="text-[10px] font-bold text-[#7a8794]">{dlLabel(p.consecutivo)}</span>
                           <span className="rounded bg-yellow-300 px-1.5 py-0.5 text-xs font-bold tracking-wider text-[#14352a] ring-1 ring-yellow-400">{p.placa}</span>
-                          {p.anulada && <span className="rounded bg-[#fbeceb] px-1 py-0.5 text-[9px] font-bold uppercase text-[#b3261e]">ANULADA</span>}
-                          {!p.impresa && !p.anulada && <span className="rounded bg-[#fdf6e9] px-1 py-0.5 text-[9px] font-bold uppercase text-[#a86a12]">SIN IMPRIMIR</span>}
+                          {p.anulada ? (
+                            <span className="rounded bg-[#fbeceb] px-1 py-0.5 text-[9px] font-bold uppercase text-[#b3261e]">Anulado</span>
+                          ) : p.impresa ? (
+                            <span className="rounded bg-[#e8f3e2] px-1 py-0.5 text-[9px] font-bold uppercase text-[#2f8f4e]">Impreso</span>
+                          ) : p.impresaAt ? (
+                            <span className="rounded bg-[#fdf0e6] px-1 py-0.5 text-[9px] font-bold uppercase text-[#7c4a00]">Reimpresión</span>
+                          ) : (
+                            <span className="rounded bg-[#fdf6e9] px-1 py-0.5 text-[9px] font-bold uppercase text-[#a86a12]">Sin imprimir</span>
+                          )}
                         </div>
                         <p className="truncate text-[11px] text-[#45505e]">{p.conductor || "Sin conductor"}</p>
                         {p.ruta && <p className="truncate text-[10px] text-[#7a8794]">{p.ruta}</p>}
@@ -575,10 +656,10 @@ export default function PlanificacionDLPage() {
                           <span className="font-semibold text-[#14352a]">{fmtKg(p.kilos)} kg</span>
                         </div>
                         {p.anulada && p.reemplazadaPorConsecutivo && (
-                          <p className="mt-0.5 text-[10px] text-[#7a8794]">Reemplazada por #{String(p.reemplazadaPorConsecutivo).padStart(5,"0")}</p>
+                          <p className="mt-0.5 text-[10px] text-[#7a8794]">Reemplazada por {dlLabel(p.reemplazadaPorConsecutivo)}</p>
                         )}
                         {p.reemplazaDeConsecutivo && (
-                          <p className="mt-0.5 text-[10px] text-[#2f8f4e]">Reemplazo de #{String(p.reemplazaDeConsecutivo).padStart(5,"0")}</p>
+                          <p className="mt-0.5 text-[10px] text-[#2f8f4e]">Reemplazo de {dlLabel(p.reemplazaDeConsecutivo)}</p>
                         )}
                         {!p.anulada && (
                           <div className="mt-1.5 flex items-center justify-end gap-1">
@@ -636,6 +717,7 @@ export default function PlanificacionDLPage() {
                     <p className="text-xs text-[#a7c4b5]">{despacho.docs} documentos · {fmtKg(despacho.kilos)} kg</p>
                   </div>
                   <div className="flex flex-col gap-1 text-right text-xs">
+                    <span className="font-bold text-yellow-300">{dlLabel(proximoConsecutivo)}</span>
                     <span className="text-[#a7c4b5]">Ruta: <span className="font-semibold text-white">{ruta || "—"}</span></span>
                     <span className="text-[#a7c4b5]">Auxiliar: <span className="font-semibold text-white">{auxiliar || "—"}</span></span>
                   </div>
@@ -768,7 +850,7 @@ export default function PlanificacionDLPage() {
               </div>
             </div>
             <div className="rounded-xl border border-[#f0d9b0] bg-[#fdf6e9] px-4 py-3 text-sm text-[#a86a12]">
-              La planilla <strong>#{String(confirmandoAnulacion.planilla.consecutivo).padStart(5, "0")}</strong> de{" "}
+              La planilla <strong>{dlLabel(confirmandoAnulacion.planilla.consecutivo)}</strong> de{" "}
               <strong>{confirmandoAnulacion.planilla.placa}</strong> será marcada como <strong>ANULADA</strong> y
               se creará una nueva con un consecutivo diferente para mantener la trazabilidad.
             </div>
@@ -794,6 +876,92 @@ export default function PlanificacionDLPage() {
       {/* Imprimir tras crear */}
       {creada && <ImprimirModal planilla={creada} onClose={() => setCreada(null)} />}
 
+      {/* Modal: Reporte de cambios */}
+      {mostrarCambios && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setMostrarCambios(false)}>
+          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex shrink-0 items-center justify-between border-b border-[#eceef0] px-6 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-[#14352a]">Reporte de cambios</h3>
+                <p className="text-xs text-[#7a8794]">{cambiosPendientes} pendiente{cambiosPendientes !== 1 ? "s" : ""} de {cambios.length}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => { limpiarCambiosHechos().then(refrescarCambios).catch((err) => console.error(err)); }} className="rounded-lg border border-[#dfe4e0] px-3 py-1.5 text-xs font-medium text-[#45505e] hover:bg-[#f4f6f3]">Limpiar hechos</button>
+                <button onClick={() => setMostrarCambios(false)} className="rounded-lg p-1.5 text-[#7a8794] hover:bg-[#f4f6f3]">
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 18 18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+            </div>
+            <div className="nice-scroll min-h-0 flex-1 overflow-auto p-4">
+              {cambios.length === 0 ? (
+                <p className="p-6 text-center text-sm text-[#7a8794]">Sin cambios registrados.</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {[...cambios].reverse().map((c) => {
+                    const tipoLabel = c.tipo === "movimiento" ? "Movimiento" : c.tipo === "anulacion" ? "Anulación" : c.tipo === "reimpresion" ? "Reimpresión" : "Liberación";
+                    const tipoColor = c.tipo === "anulacion" ? "bg-[#fbeceb] text-[#b3261e]" : c.tipo === "movimiento" ? "bg-[#eef2f8] text-[#4a6fa5]" : c.tipo === "reimpresion" ? "bg-[#fdf6e9] text-[#a86a12]" : "bg-[#eceef0] text-[#6b7683]";
+                    return (
+                      <label key={c.id} className={`flex items-start gap-3 rounded-lg border p-3 transition-colors ${c.hecho ? "border-[#e1e9dd] bg-[#f7faf5] opacity-60" : "border-[#e1e9dd] bg-white"}`}>
+                        <input type="checkbox" checked={c.hecho} onChange={(e) => { marcarCambioHecho(c.id, e.target.checked).then(refrescarCambios).catch((err) => console.error(err)); }} className="mt-0.5 h-4 w-4 accent-[#2f8f4e]" />
+                        <div className="flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${tipoColor}`}>{tipoLabel}</span>
+                            {c.remision && <span className="font-mono text-xs font-semibold text-[#14352a]">{c.remision}</span>}
+                            <span className="text-[10px] text-[#7a8794]">{new Date(c.createdAt).toLocaleString("es-CO")}</span>
+                          </div>
+                          <p className="mt-1 text-xs text-[#45505e]">
+                            {c.deVehiculo && <>De <strong>{c.deVehiculo}</strong></>}
+                            {c.aVehiculo && <> → a <strong>{c.aVehiculo}</strong></>}
+                            {c.dlOrigen != null && <> · {dlLabel(c.dlOrigen)}</>}
+                            {c.dlNuevo != null && <> → {dlLabel(c.dlNuevo)}</>}
+                          </p>
+                          {c.detalle && <p className="text-[11px] text-[#7a8794]">{c.detalle}</p>}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de alerta: planillas pendientes de imprimir / reimprimir */}
+      {alertaReimprimir && sinImprimir.length > 0 && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setAlertaReimprimir(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fdf6e9] text-[#a86a12]">
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              </span>
+              <div>
+                <h3 className="text-base font-semibold text-[#14352a]">Planillas por imprimir / reimprimir</h3>
+                <p className="text-xs text-[#7a8794]">Hay {sinImprimir.length} planilla{sinImprimir.length !== 1 ? "s" : ""} pendiente{sinImprimir.length !== 1 ? "s" : ""}.</p>
+              </div>
+            </div>
+            <div className="nice-scroll max-h-64 overflow-auto rounded-xl border border-[#f0d9b0] bg-[#fdf6e9] p-2">
+              {sinImprimir.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => { setImprimiendoPlanilla(p); setAlertaReimprimir(false); }}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm text-[#a86a12] transition-colors hover:bg-[#faedd4]"
+                >
+                  <span className="font-semibold">{dlLabel(p.consecutivo)} · {p.placa}</span>
+                  <span className="inline-flex items-center gap-1 text-xs">
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                    Imprimir
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button onClick={() => setAlertaReimprimir(false)} className="rounded-lg border border-[#dfe4e0] px-4 py-2.5 text-sm font-medium text-[#45505e] hover:bg-[#f4f6f3]">Entendido</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Imprimir desde tarjeta de plantilla */}
       {imprimiendoPlanilla && (
         <ImprimirModal planilla={imprimiendoPlanilla} onClose={() => setImprimiendoPlanilla(null)} />
@@ -803,7 +971,7 @@ export default function PlanificacionDLPage() {
       {eliminando && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEliminando(null)}>
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-[#14352a]">Anular plantilla #{String(eliminando.consecutivo).padStart(5, "0")}</h3>
+            <h3 className="text-lg font-semibold text-[#14352a]">Anular plantilla {dlLabel(eliminando.consecutivo)}</h3>
             <p className="mt-1 text-sm text-[#5f7a68]">
               La planilla de <span className="font-semibold">{eliminando.placa}</span> ({eliminando.docs} docs) será <strong>anulada</strong> para mantener trazabilidad y se creará una copia nueva. ¿Qué deseas hacer con la carga?
             </p>
@@ -945,15 +1113,35 @@ function EditarPlanillaModal({
         return;
       }
 
-      // Cualquier cambio en una planilla ya creada → anular la actual y crear una NUEVA
-      // imprimible con los datos nuevos (trazabilidad "reemplazada por / reemplaza de").
-      onAnular(planilla, placaCambio ? placa : "mantener", {
+      // Cambio de placa / conductor / auxiliar / ruta → ANULAR y crear nueva imprimible
+      // (con trazabilidad "reemplazada por / reemplaza de"). Incluye los items actuales.
+      if (placaCambio || auxiliarCambio || rutaCambio) {
+        onAnular(planilla, placaCambio ? placa : "mantener", {
+          placa,
+          conductor,
+          auxiliarRuta: auxiliar || null,
+          ruta: ruta || null,
+          items: nuevosItems,
+        });
+        return;
+      }
+
+      // Solo cambiaron documentos/remisiones → NO se anula, se marca para REIMPRIMIR.
+      await editarPlanilla(planilla.id, {
         placa,
         conductor,
         auxiliarRuta: auxiliar || null,
         ruta: ruta || null,
         items: nuevosItems,
+        impresa: false,
       });
+      await addCambio({
+        tipo: "reimpresion",
+        deVehiculo: planilla.placa,
+        dlOrigen: planilla.consecutivo,
+        detalle: "Cambiaron documentos/remisiones — reimprimir",
+      });
+      onSaved();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al guardar");
     } finally {
@@ -971,7 +1159,7 @@ function EditarPlanillaModal({
               Editar plantilla
             </h3>
             <p className="mt-0.5 text-sm text-[#5f7a68]">
-              Consecutivo {String(planilla.consecutivo).padStart(5, "0")} · {new Date(planilla.createdAt).toLocaleString("es-CO")}
+              Consecutivo {dlLabel(planilla.consecutivo)} · {new Date(planilla.createdAt).toLocaleString("es-CO")}
             </p>
           </div>
           <button onClick={onClose} aria-label="Cerrar" className="rounded-lg p-1.5 text-[#7a8794] transition-colors hover:bg-[#f4f6f3]">

@@ -17,6 +17,7 @@ model User {
   password  String
   name      String?
   role      Role     @default(USER)
+  permisos  String?  // JSON: lista de módulos permitidos (null = todos)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -232,4 +233,49 @@ model Novedad {
   @@index([fecha])
 }
 
+// ── Configuración operativa (antes en localStorage) ──────────────────────────
+
+model Auxiliar {
+  id        String   @id @default(cuid())
+  nombre    String
+  telefono  String?
+  orden     Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model Ruta {
+  id        String   @id @default(cuid())
+  nombre    String
+  recorrido String?
+  ciudad    String?
+  kls       Int?
+  tiempo    String?
+  grupo     String?
+  orden     Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model PlanNombre {
+  id        String   @id @default(cuid())
+  nombre    String
+  tipo      String?
+  orden     Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+// Registro de cambios de despacho (movimientos, anulaciones, reimpresiones).
+model CambioDespacho {
+  id         String   @id @default(cuid())
+  tipo       String
+  remision   String?
+  deVehiculo String?
+  aVehiculo  String?
+  dlOrigen   Int?
+  dlNuevo    Int?
+  detalle    String?
+  hecho      Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([hecho])
+}
 

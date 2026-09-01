@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-const LS_KEY = "sc_plan_nombres_v1";
+import { getPlanNombres, savePlanNombres, type PlanNombre as ApiPlanNombre } from "@/lib/api";
 
 type PlanNombre = { id: string; nombre: string; tipo: string };
 
@@ -15,24 +14,36 @@ const TIPOS_DEFECTO: PlanNombre[] = [
   { id: "6", nombre: "Distribución Isimo", tipo: "Isimo" },
 ];
 
-function loadData(): PlanNombre[] {
-  if (typeof window === "undefined") return TIPOS_DEFECTO;
-  try { return JSON.parse(localStorage.getItem(LS_KEY) ?? "null") ?? TIPOS_DEFECTO; }
-  catch { return TIPOS_DEFECTO; }
+function normalizar(data: ApiPlanNombre[]): PlanNombre[] {
+  return data.map((p) => ({ id: p.id, nombre: p.nombre, tipo: p.tipo ?? "" }));
 }
-function saveData(data: PlanNombre[]) { localStorage.setItem(LS_KEY, JSON.stringify(data)); }
-
-export function getPlanNombres(): PlanNombre[] { return loadData(); }
 
 export default function PlanNombresPage() {
-  const [lista, setLista] = useState<PlanNombre[]>(loadData);
+  const [lista, setLista] = useState<PlanNombre[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editItem, setEditItem] = useState<PlanNombre | null>(null);
   const [nombre, setNombre] = useState("");
   const [tipo, setTipo] = useState("");
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { setLista(loadData()); }, []);
+  useEffect(() => {
+    getPlanNombres()
+      .then((data) => setLista(normalizar(data)))
+      .catch((err) => { console.error(err); setError("No se pudieron cargar los nombres de planes"); });
+  }, []);
+
+  async function persistir(next: PlanNombre[]) {
+    setLista(next);
+    try {
+      const guardado = await savePlanNombres(next);
+      setLista(normalizar(guardado));
+      setError(null);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo guardar. Intenta de nuevo.");
+    }
+  }
 
   function abrirCrear() { setEditItem(null); setNombre(""); setTipo(""); setModalOpen(true); }
   function abrirEditar(p: PlanNombre) { setEditItem(p); setNombre(p.nombre); setTipo(p.tipo); setModalOpen(true); }
@@ -43,20 +54,17 @@ export default function PlanNombresPage() {
     const next = editItem
       ? lista.map((p) => p.id === editItem.id ? { ...p, nombre: nombre.trim(), tipo: tipo.trim() } : p)
       : [...lista, { id: Date.now().toString(), nombre: nombre.trim(), tipo: tipo.trim() }];
-    setLista(next);
-    saveData(next);
+    void persistir(next);
     cerrarModal();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
 
   function eliminar(id: string) {
-    const next = lista.filter((p) => p.id !== id);
-    setLista(next);
-    saveData(next);
+    void persistir(lista.filter((p) => p.id !== id));
   }
 
-  function restaurar() { setLista(TIPOS_DEFECTO); saveData(TIPOS_DEFECTO); }
+  function restaurar() { void persistir(TIPOS_DEFECTO); }
 
   const hoy = new Date().toLocaleDateString("es-CO");
 
@@ -69,6 +77,7 @@ export default function PlanNombresPage() {
         </div>
         <div className="flex items-center gap-2">
           {saved && <span className="text-sm text-[#2f8f4e]">✓ Guardado</span>}
+          {error && <span className="text-sm text-[#b3261e]">{error}</span>}
           <button onClick={restaurar} className="rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm text-[#45505e] hover:bg-[#f4f6f3]">
             Restaurar originales
           </button>
@@ -79,34 +88,24 @@ export default function PlanNombresPage() {
         </div>
       </header>
 
-      <div className="nice-scroll min-h-0 flex-1 overflow-auto rounded-2xl border border-[#e1e9dd] bg-white shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="border-b border-[#eceef0] bg-[#f7faf5] text-xs uppercase tracking-wide text-[#7a8794]">
-            <tr>
-              <th className="px-4 py-3 text-left font-semibold">Nombre del plan</th>
-              <th className="px-4 py-3 text-left font-semibold">Tipo</th>
-              <th className="px-4 py-3 text-left font-semibold">Ejemplo generado</th>
-              <th className="px-4 py-3 text-right font-semibold">Acciones</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[#f0f2ee]">
-            {lista.map((p) => (
-              <tr key={p.id} className="hover:bg-[#f9fbf7]">
-                <td className="px-4 py-3 font-medium text-[#14352a]">{p.nombre}</td>
-                <td className="px-4 py-3">
-                  <span className="rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">{p.tipo}</span>
-                </td>
-                <td className="px-4 py-3 text-xs text-[#7a8794]">{p.nombre} {hoy}</td>
-                <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-2">
-                    <button onClick={() => abrirEditar(p)} className="rounded border border-[#f0d9b0] bg-[#fdf6e9] px-3 py-1 text-xs text-[#a86a12] hover:bg-[#faedd4]">Editar</button>
-                    <button onClick={() => eliminar(p.id)} className="rounded border border-[#dfe4e0] bg-white px-3 py-1 text-xs text-[#b3261e] hover:bg-[#fbeceb]">Eliminar</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="nice-scroll min-h-0 flex-1 overflow-auto">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {lista.map((p) => (
+            <div key={p.id} className="flex flex-col gap-2 rounded-2xl border border-[#e1e9dd] bg-white p-4 shadow-sm transition-shadow hover:shadow-md">
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="text-sm font-semibold text-[#14352a]">{p.nombre}</h3>
+                <span className="shrink-0 rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">{p.tipo}</span>
+              </div>
+              <p className="text-xs text-[#7a8794]">
+                <span className="font-medium text-[#a6b0a9]">Ejemplo:</span> {p.nombre} {hoy}
+              </p>
+              <div className="mt-1 flex items-center gap-2 border-t border-[#f0f2ee] pt-2">
+                <button onClick={() => abrirEditar(p)} className="flex-1 rounded-lg border border-[#f0d9b0] bg-[#fdf6e9] px-3 py-1.5 text-xs font-medium text-[#a86a12] hover:bg-[#faedd4]">Editar</button>
+                <button onClick={() => eliminar(p.id)} className="flex-1 rounded-lg border border-[#dfe4e0] bg-white px-3 py-1.5 text-xs font-medium text-[#b3261e] hover:bg-[#fbeceb]">Eliminar</button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {modalOpen && (

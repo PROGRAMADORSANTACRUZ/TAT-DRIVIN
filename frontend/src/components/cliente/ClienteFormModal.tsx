@@ -12,7 +12,6 @@ import {
 } from "@/lib/api";
 import { tc } from "@/lib/utils";
 import DireccionInput from "./DireccionInput";
-import ReferenciaInput from "./ReferenciaInput";
 import MapaDireccion from "./MapaDireccion";
 
 const INPUT_CLS =
@@ -113,6 +112,19 @@ export default function ClienteFormModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Concatenados (consecutivos "cliente - destino") editables a mano.
+  const [concatenados, setConcatenados] = useState<string[]>(gs?.consecutivos ?? tat?.consecutivos ?? []);
+  const [nuevoConcat, setNuevoConcat] = useState("");
+  function agregarConcat() {
+    const v = nuevoConcat.trim();
+    if (!v) return;
+    setConcatenados((prev) => (prev.some((x) => x.toUpperCase() === v.toUpperCase()) ? prev : [...prev, v]));
+    setNuevoConcat("");
+  }
+  function quitarConcat(c: string) {
+    setConcatenados((prev) => prev.filter((x) => x !== c));
+  }
+
   function set<K extends keyof Form>(campo: K, valor: Form[K]) {
     setForm((p) => ({ ...p, [campo]: valor }));
   }
@@ -154,6 +166,7 @@ export default function ClienteFormModal({
           lon: lngStr,
           puntoVenta: form.puntoVenta.trim() || null,
           tipo: form.tipo,
+          consecutivos: concatenados,
         });
         onSaved(guardado);
       } else {
@@ -175,12 +188,12 @@ export default function ClienteFormModal({
           lon: lngStr,
         };
         if (modo === "editarGS" && gs) {
-          const guardado = await updateCliente(gs.id, payload);
+          const guardado = await updateCliente(gs.id, { ...payload, consecutivos: concatenados });
           onSaved(guardado);
         } else {
           const guardado = await crearCliente({
             ...payload,
-            consecutivos: consecutivoInicial ? [consecutivoInicial] : [],
+            consecutivos: [...new Set([...(consecutivoInicial ? [consecutivoInicial] : []), ...concatenados])],
           });
           onSaved(guardado);
         }
@@ -259,7 +272,7 @@ export default function ClienteFormModal({
                 <DireccionInput value={form.direccion} onChange={(v) => set("direccion", v)} />
               </Bloque>
 
-              <Bloque titulo="Contacto y referencia">
+              <Bloque titulo="Contacto">
                 <div className="flex flex-wrap gap-3">
                   <Campo label="Teléfono">
                     <input
@@ -280,9 +293,33 @@ export default function ClienteFormModal({
                     />
                   </Campo>
                 </div>
-                <div className="mt-2">
-                  <ReferenciaInput value={form.referencia} onChange={(v) => set("referencia", v)} />
+              </Bloque>
+
+              <Bloque titulo={`Concatenados (${concatenados.length})`}>
+                <div className="flex gap-2">
+                  <input
+                    value={nuevoConcat}
+                    onChange={(e) => setNuevoConcat(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); agregarConcat(); } }}
+                    placeholder="CLIENTE - DESTINO"
+                    className={`${INPUT_CLS} min-w-0 flex-1`}
+                  />
+                  <button type="button" onClick={agregarConcat} className="shrink-0 rounded-lg bg-[#2f8f4e] px-3 py-2 text-sm font-medium text-white hover:bg-[#277a42]">Agregar</button>
                 </div>
+                {concatenados.length > 0 ? (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {concatenados.map((c, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 rounded-full bg-[#eef2f8] px-2.5 py-1 text-[11px] font-medium text-[#4a6fa5]">
+                        {c}
+                        <button type="button" onClick={() => quitarConcat(c)} title="Quitar" className="text-[#4a6fa5] hover:text-[#b3261e]">
+                          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 18 18 6M6 6l12 12" /></svg>
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-[#7a8794]">Sin concatenados asignados a este cliente.</p>
+                )}
               </Bloque>
 
               <Bloque titulo="Clasificación">

@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { HttpError } from "../middleware/errorHandler";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requirePermiso } from "../middleware/auth";
 
 const router = Router();
 
@@ -10,7 +10,7 @@ const novedadSchema = z.object({
   fecha: z.string().trim().min(1).optional(),
   tipo: z.string().trim().optional().default(""),
   prioridad: z.enum(["Alta", "Media", "Baja"]).default("Media"),
-  estado: z.enum(["Pendiente", "En proceso", "Resuelta"]).default("Pendiente"),
+  estado: z.enum(["Pendiente", "En tramitación", "Resuelto", "Cerrada"]).default("Pendiente"),
   estadoEntrega: z.enum(["Sin Novedad", "Con Novedad", "Doc.Pendiente", "Reenvio", "Rechazado", "Parcial Con Novedad"]).default("Sin Novedad"),
   novedad: z.string().trim().optional().nullable(),
   responsabilidad: z.string().trim().optional().nullable(),
@@ -42,36 +42,39 @@ router.get("/", requireAuth, async (req, res, next) => {
 });
 
 // POST /api/novedades
-router.post("/", requireAuth, async (req, res, next) => {
+router.post("/", requireAuth, requirePermiso("/nivel-de-servicio"), async (req, res, next) => {
   try {
     const parsed = novedadSchema.safeParse(req.body);
     if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
     const d = parsed.data;
-    const last = await prisma.novedad.findFirst({
-      orderBy: { consecutivo: "desc" },
-      select: { consecutivo: true },
-    });
-    const novedad = await prisma.novedad.create({
-      data: {
-        consecutivo: (last?.consecutivo ?? 0) + 1,
-        fecha: d.fecha ?? new Date().toISOString().slice(0, 10),
-        tipo: d.tipo ?? "",
-        prioridad: d.prioridad,
-        estado: d.estado,
-        estadoEntrega: d.estadoEntrega,
-        novedad: d.novedad ?? null,
-        responsabilidad: d.responsabilidad ?? null,
-        noLlego: d.noLlego ?? null,
-        planillaId: d.planillaId ?? null,
-        placa: d.placa ?? null,
-        conductor: d.conductor ?? null,
-        auxiliarRuta: d.auxiliarRuta ?? null,
-        cliente: d.cliente ?? null,
-        numeroOrden: d.numeroOrden ?? null,
-        descripcion: d.descripcion ?? "",
-        resolucion: d.resolucion ?? null,
-        resueltaAt: d.estado === "Resuelta" ? new Date() : null,
-      },
+    const novedad = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(1002)`;
+      const last = await tx.novedad.findFirst({
+        orderBy: { consecutivo: "desc" },
+        select: { consecutivo: true },
+      });
+      return tx.novedad.create({
+        data: {
+          consecutivo: (last?.consecutivo ?? 0) + 1,
+          fecha: d.fecha ?? new Date().toISOString().slice(0, 10),
+          tipo: d.tipo ?? "",
+          prioridad: d.prioridad,
+          estado: d.estado,
+          estadoEntrega: d.estadoEntrega,
+          novedad: d.novedad ?? null,
+          responsabilidad: d.responsabilidad ?? null,
+          noLlego: d.noLlego ?? null,
+          planillaId: d.planillaId ?? null,
+          placa: d.placa ?? null,
+          conductor: d.conductor ?? null,
+          auxiliarRuta: d.auxiliarRuta ?? null,
+          cliente: d.cliente ?? null,
+          numeroOrden: d.numeroOrden ?? null,
+          descripcion: d.descripcion ?? "",
+          resolucion: d.resolucion ?? null,
+          resueltaAt: d.estado === "Resuelto" || d.estado === "Cerrada" ? new Date() : null,
+        },
+      });
     });
     res.status(201).json(novedad);
   } catch (err) {
@@ -80,7 +83,7 @@ router.post("/", requireAuth, async (req, res, next) => {
 });
 
 // PATCH /api/novedades/:id
-router.patch("/:id", requireAuth, async (req, res, next) => {
+router.patch("/:id", requireAuth, requirePermiso("/nivel-de-servicio"), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const parsed = patchSchema.safeParse(req.body);
@@ -107,7 +110,7 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
     if (d.resolucion !== undefined) data.resolucion = d.resolucion ?? null;
     if (d.estado !== undefined) {
       data.estado = d.estado;
-      data.resueltaAt = d.estado === "Resuelta" ? existe.resueltaAt ?? new Date() : null;
+      data.resueltaAt = d.estado === "Resuelto" || d.estado === "Cerrada" ? existe.resueltaAt ?? new Date() : null;
     }
 
     const novedad = await prisma.novedad.update({ where: { id }, data });
@@ -118,7 +121,7 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
 });
 
 // DELETE /api/novedades/:id
-router.delete("/:id", requireAuth, async (req, res, next) => {
+router.delete("/:id", requireAuth, requirePermiso("/nivel-de-servicio"), async (req, res, next) => {
   try {
     await prisma.novedad.delete({ where: { id: String(req.params.id) } });
     res.json({ eliminado: true });

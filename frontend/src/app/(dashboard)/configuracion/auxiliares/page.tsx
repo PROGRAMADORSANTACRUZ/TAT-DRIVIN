@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AUXILIARES_BASE, getAuxiliares, saveAuxiliares, type Auxiliar } from "@/data/planillaConfig";
+import { AUXILIARES_BASE, type Auxiliar } from "@/data/planillaConfig";
+import { getAuxiliares, saveAuxiliares } from "@/lib/api";
 
 let nextId = 1000;
 function newId() { return `aux-${++nextId}-${Date.now()}`; }
@@ -12,8 +13,25 @@ export default function AuxiliaresPage() {
   const [creando, setCreando] = useState(false);
   const [buscar, setBuscar] = useState("");
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { setLista(getAuxiliares()); }, []);
+  useEffect(() => {
+    getAuxiliares()
+      .then((data) => setLista(data as Auxiliar[]))
+      .catch((err) => { console.error(err); setError("No se pudieron cargar los auxiliares"); });
+  }, []);
+
+  async function persistir(next: Auxiliar[]) {
+    setLista(next);
+    try {
+      const saved = await saveAuxiliares(next);
+      setLista(saved as Auxiliar[]);
+      setError(null);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo guardar. Intenta de nuevo.");
+    }
+  }
 
   function guardar(data: { nombre: string; telefono?: string }) {
     let next: Auxiliar[];
@@ -23,8 +41,7 @@ export default function AuxiliaresPage() {
       next = [...lista, { id: newId(), ...data }];
     }
     next = next.sort((a, b) => a.nombre.localeCompare(b.nombre));
-    setLista(next);
-    saveAuxiliares(next);
+    void persistir(next);
     setEditando(null);
     setCreando(false);
     setSaved(true);
@@ -32,14 +49,11 @@ export default function AuxiliaresPage() {
   }
 
   function eliminar(id: string) {
-    const next = lista.filter((a) => a.id !== id);
-    setLista(next);
-    saveAuxiliares(next);
+    void persistir(lista.filter((a) => a.id !== id));
   }
 
   function resetearBase() {
-    setLista(AUXILIARES_BASE);
-    saveAuxiliares(AUXILIARES_BASE);
+    void persistir(AUXILIARES_BASE);
   }
 
   const filtrado = lista.filter((a) =>
@@ -55,6 +69,7 @@ export default function AuxiliaresPage() {
         </div>
         <div className="flex items-center gap-2">
           {saved && <span className="text-sm text-[#2f8f4e]">✓ Guardado</span>}
+          {error && <span className="text-sm text-[#b3261e]">{error}</span>}
           <button onClick={resetearBase} className="rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm text-[#45505e] hover:bg-[#f4f6f3]">
             Restaurar originales
           </button>

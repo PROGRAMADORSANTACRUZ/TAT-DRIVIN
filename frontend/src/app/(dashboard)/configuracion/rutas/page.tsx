@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { RUTAS_BASE, getRutas, saveRutas, type Ruta } from "@/data/planillaConfig";
+import { RUTAS_BASE, type Ruta } from "@/data/planillaConfig";
+import { getRutas, saveRutas } from "@/lib/api";
 
 const GRUPOS = ["PDV CASA", "Cartagena", "Santa Marta", "Poblaciones", "Local", "Inversiones", "Clientes Varios"];
 
@@ -15,8 +16,25 @@ export default function RutasPage() {
   const [buscar, setBuscar] = useState("");
   const [filtroGrupo, setFiltroGrupo] = useState("");
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { setLista(getRutas()); }, []);
+  useEffect(() => {
+    getRutas()
+      .then((data) => setLista(data as Ruta[]))
+      .catch((err) => { console.error(err); setError("No se pudieron cargar las rutas"); });
+  }, []);
+
+  async function persistir(next: Ruta[]) {
+    setLista(next);
+    try {
+      const saved = await saveRutas(next);
+      setLista(saved as Ruta[]);
+      setError(null);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo guardar. Intenta de nuevo.");
+    }
+  }
 
   function guardar(data: Omit<Ruta, "id">) {
     let next: Ruta[];
@@ -25,8 +43,7 @@ export default function RutasPage() {
     } else {
       next = [...lista, { id: newId(), ...data }];
     }
-    setLista(next);
-    saveRutas(next);
+    void persistir(next);
     setEditando(null);
     setCreando(false);
     setSaved(true);
@@ -34,9 +51,7 @@ export default function RutasPage() {
   }
 
   function eliminar(id: string) {
-    const next = lista.filter((r) => r.id !== id);
-    setLista(next);
-    saveRutas(next);
+    void persistir(lista.filter((r) => r.id !== id));
   }
 
   const filtrado = lista.filter((r) => {
@@ -54,7 +69,8 @@ export default function RutasPage() {
         </div>
         <div className="flex items-center gap-2">
           {saved && <span className="text-sm text-[#2f8f4e]">✓ Guardado</span>}
-          <button onClick={() => { setLista(RUTAS_BASE); saveRutas(RUTAS_BASE); }} className="rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm text-[#45505e] hover:bg-[#f4f6f3]">
+          {error && <span className="text-sm text-[#b3261e]">{error}</span>}
+          <button onClick={() => { void persistir(RUTAS_BASE); }} className="rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm text-[#45505e] hover:bg-[#f4f6f3]">
             Restaurar originales
           </button>
           <button onClick={() => { setCreando(true); setEditando(null); }} className="inline-flex items-center gap-2 rounded-lg bg-[#2f8f4e] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#277a42]">

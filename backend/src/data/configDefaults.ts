@@ -1,15 +1,8 @@
-// Datos de auxiliares de ruta y rutas para la Planilla de Despacho.
-// Los datos base están aquí; la configuración persistente vive en la base de datos
-// (endpoints /api/config/*). Estos arreglos se usan solo como semilla/fallback.
+// Valores por defecto de configuración operativa (antes en localStorage del frontend).
+// Se usan para sembrar las tablas la primera vez que se consultan si están vacías.
 
-export interface Auxiliar {
-  id: string;
-  nombre: string;
-  telefono?: string;
-}
-
-export interface Ruta {
-  id: string;
+export interface AuxiliarSeed { nombre: string; telefono?: string }
+export interface RutaSeed {
   nombre: string;
   recorrido?: string;
   ciudad?: string;
@@ -17,64 +10,49 @@ export interface Ruta {
   tiempo?: string;
   grupo?: string;
 }
+export interface PlanNombreSeed { nombre: string; tipo?: string }
 
-// Tipos de despacho disponibles
-export const TIPOS_DESPACHO = [
-  "Casa",
-  "Megatienda",
-  "Olímpica",
-  "Éxito",
-  "Inversiones-Distribución",
-  "Agropecuaria-Distribución",
-  "TAT Inversiones",
-  "TAT Agropecuaria",
+export const AUXILIARES_DEFAULT: AuxiliarSeed[] = [
+  { nombre: "Aux. Alberto Marquez", telefono: "301-2512445" },
+  { nombre: "Aux. Brayan Maldonado", telefono: "300-5141691" },
+  { nombre: "Aux. De Francisco" },
+  { nombre: "Aux. Estiven Hoyos", telefono: "323-2912805" },
+  { nombre: "Aux. Jorge Zambrano", telefono: "300-2626244" },
+  { nombre: "Aux. Pedro Cantillo" },
+  { nombre: "Aux. Samuel Suarez", telefono: "302-3271042" },
+  { nombre: "C&D - Alberto Marin" },
+  { nombre: "C&D - Alexis Ripoll", telefono: "3042566921" },
+  { nombre: "C&D - Brayan Venera" },
+  { nombre: "C&D - Britner Sanchez Parra" },
+  { nombre: "C&D - Eusebio Carmona", telefono: "317-5933047" },
+  { nombre: "C&D - Francisco Cortez" },
+  { nombre: "C&D - Francisco Florian" },
+  { nombre: "C&D - Franklin Avila" },
+  { nombre: "C&D - Heiber Sanchez Parra" },
+  { nombre: "C&D - Hugo Rosario", telefono: "324-2371443" },
+  { nombre: "C&D - Humberto Moreno" },
+  { nombre: "C&D - Ismael Meriño" },
+  { nombre: "C&D - Johan Barras" },
+  { nombre: "C&D - Jose Altamar", telefono: "304-4250664" },
+  { nombre: "C&D - Jose Bolivar", telefono: "300-7531361" },
+  { nombre: "C&D - Juan Diego Fuentes" },
+  { nombre: "C&D - Juan Jose Hueto" },
+  { nombre: "C&D - Luis Escorcia" },
+  { nombre: "C&D - Luis Henao", telefono: "301-3279630" },
+  { nombre: "C&D - Miguel Angel Robles" },
+  { nombre: "C&D - Samuel Galue" },
+  { nombre: "C&D - Santiago Blanco", telefono: "301-5434091" },
+  { nombre: "C&D - Wilmar Gonzalez" },
+  { nombre: "C&D - Wilson Suarez" },
+  { nombre: "C&D - Yeiner Beltran" },
+  { nombre: "C&D - Yeremi Aragon" },
+  { nombre: "C&D - David Alexander Mendoza", telefono: "313-4883247" },
+  { nombre: "C&D - Heibert Sanchez" },
+  { nombre: "C&D - Waldir Rivera" },
+  { nombre: "C&D - Yosman Medina" },
 ];
 
-export const AUXILIARES_BASE: Auxiliar[] = [
-  { id: "a1", nombre: "Aux. Alberto Marquez", telefono: "301-2512445" },
-  { id: "a2", nombre: "Aux. Brayan Maldonado", telefono: "300-5141691" },
-  { id: "a3", nombre: "Aux. De Francisco" },
-  { id: "a4", nombre: "Aux. Estiven Hoyos", telefono: "323-2912805" },
-  { id: "a5", nombre: "Aux. Jorge Zambrano", telefono: "300-2626244" },
-  { id: "a6", nombre: "Aux. Pedro Cantillo" },
-  { id: "a7", nombre: "Aux. Samuel Suarez", telefono: "302-3271042" },
-  { id: "a8", nombre: "C&D - Alberto Marin" },
-  { id: "a9", nombre: "C&D - Alexis Ripoll", telefono: "3042566921" },
-  { id: "a10", nombre: "C&D - Brayan Venera" },
-  { id: "a11", nombre: "C&D - Britner Sanchez Parra" },
-  { id: "a12", nombre: "C&D - Eusebio Carmona", telefono: "317-5933047" },
-  { id: "a13", nombre: "C&D - Francisco Cortez" },
-  { id: "a14", nombre: "C&D - Francisco Florian" },
-  { id: "a15", nombre: "C&D - Franklin Avila" },
-  { id: "a16", nombre: "C&D - Heiber Sanchez Parra" },
-  { id: "a17", nombre: "C&D - Hugo Rosario", telefono: "324-2371443" },
-  { id: "a18", nombre: "C&D - Humberto Moreno" },
-  { id: "a19", nombre: "C&D - Ismael Meriño" },
-  { id: "a20", nombre: "C&D - Johan Barras" },
-  { id: "a21", nombre: "C&D - Jose Altamar", telefono: "304-4250664" },
-  { id: "a22", nombre: "C&D - Jose Bolivar", telefono: "300-7531361" },
-  { id: "a23", nombre: "C&D - Juan Diego Fuentes" },
-  { id: "a24", nombre: "C&D - Juan Jose Hueto" },
-  { id: "a25", nombre: "C&D - Luis Escorcia" },
-  { id: "a26", nombre: "C&D - Luis Henao", telefono: "301-3279630" },
-  { id: "a27", nombre: "C&D - Miguel Angel Robles" },
-  { id: "a28", nombre: "C&D - Samuel Galue" },
-  { id: "a29", nombre: "C&D - Santiago Blanco", telefono: "301-5434091" },
-  { id: "a30", nombre: "C&D - Wilmar Gonzalez" },
-  { id: "a31", nombre: "C&D - Wilson Suarez" },
-  { id: "a32", nombre: "C&D - Yeiner Beltran" },
-  { id: "a33", nombre: "C&D - Yeremi Aragon" },
-  { id: "a34", nombre: "C&D - David Alexander Mendoza", telefono: "313-4883247" },
-  { id: "a35", nombre: "C&D - Heibert Sanchez" },
-  { id: "a36", nombre: "C&D - Waldir Rivera" },
-  { id: "a37", nombre: "C&D - Yosman Medina" },
-];
-
-/** Compatibilidad con el código existente */
-export const AUXILIARES: Auxiliar[] = AUXILIARES_BASE;
-
-export const RUTAS: Ruta[] = [
-  // PDV CASA
+export const RUTAS_DEFAULT: RutaSeed[] = [
   ...Array.from({ length: 15 }, (_, i) => ({
     nombre: `R${i + 1} - PDV CASA`,
     recorrido: "Malambo-Soledad",
@@ -117,6 +95,13 @@ export const RUTAS: Ruta[] = [
   { nombre: "SANTA MARTA - TAT", recorrido: "Malambo-Cienaga-Santa Marta", ciudad: "SANTA MARTA", grupo: "Santa Marta" },
   { nombre: "VALLEDUPAR - TAT", recorrido: "Malambo-Soledad-Barranquilla-Cienaga-Santa Marta-Bosconia-Guatapuri-Rio Seco-Valledupar", ciudad: "VALLEDUPAR", kls: 369, tiempo: "6h 42 min", grupo: "Poblaciones" },
   { nombre: "MEGATIENDA VILLA CAMPESTRE", grupo: "Local" },
-].map((r, i) => ({ id: `r${i + 1}`, ...r })) as Ruta[];
+];
 
-export const RUTAS_BASE: Ruta[] = RUTAS;
+export const PLAN_NOMBRES_DEFAULT: PlanNombreSeed[] = [
+  { nombre: "Distribución Megatiendas", tipo: "Megatienda" },
+  { nombre: "Distribución Casa", tipo: "Casa" },
+  { nombre: "Distribución Éxito", tipo: "Éxito" },
+  { nombre: "Distribución TAT", tipo: "TAT" },
+  { nombre: "Distribución Olímpica", tipo: "Olímpica" },
+  { nombre: "Distribución Isimo", tipo: "Isimo" },
+];

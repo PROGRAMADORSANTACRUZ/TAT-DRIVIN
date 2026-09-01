@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { HttpError } from "../middleware/errorHandler";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requirePermiso } from "../middleware/auth";
 
 const router = Router();
 
@@ -44,6 +44,17 @@ const patchSchema = z.object({
   impresa: z.boolean().optional(),
 });
 
+// Datos opcionales de la nueva planilla al anular (override).
+const anularSchema = z.object({
+  placa: z.string().trim().optional(),
+  conductor: z.string().trim().optional().nullable(),
+  auxiliarRuta: z.string().trim().optional().nullable(),
+  ruta: z.string().trim().optional().nullable(),
+  tipoDespacho: z.string().trim().optional().nullable(),
+  items: z.array(itemSchema).optional(),
+  clientes: z.array(z.string()).optional(),
+});
+
 type Item = z.infer<typeof itemSchema>;
 
 function parseItems(raw: string | null): Item[] {
@@ -74,35 +85,38 @@ router.get("/", requireAuth, async (_req, res, next) => {
 });
 
 // POST /api/planillas  -> crea una planilla y asigna consecutivo
-router.post("/", requireAuth, async (req, res, next) => {
+router.post("/", requireAuth, requirePermiso("/planificacion-dl"), async (req, res, next) => {
   try {
     const parsed = planillaSchema.safeParse(req.body);
     if (!parsed.success) {
       throw new HttpError(400, parsed.error.issues[0].message);
     }
     const d = parsed.data;
-    const last = await prisma.planillaDespacho.findFirst({
-      orderBy: { consecutivo: "desc" },
-      select: { consecutivo: true },
-    });
-    const consecutivo = (last?.consecutivo ?? 0) + 1;
-
-    const planilla = await prisma.planillaDespacho.create({
-      data: {
-        consecutivo,
-        fecha: d.fecha,
-        placa: d.placa,
-        conductor: d.conductor ?? null,
-        origen: d.origen ?? null,
-        horaSalida: d.horaSalida ?? null,
-        auxiliarRuta: d.auxiliarRuta ?? null,
-        tipoDespacho: d.tipoDespacho ?? null,
-        ruta: d.ruta ?? null,
-        docs: d.docs,
-        kilos: d.kilos,
-        clientes: JSON.stringify(d.clientes ?? []),
-        items: JSON.stringify(d.items ?? []),
-      },
+    // Lock de consecutivo (evita duplicados bajo concurrencia).
+    const planilla = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(1001)`;
+      const last = await tx.planillaDespacho.findFirst({
+        orderBy: { consecutivo: "desc" },
+        select: { consecutivo: true },
+      });
+      const consecutivo = (last?.consecutivo ?? 0) + 1;
+      return tx.planillaDespacho.create({
+        data: {
+          consecutivo,
+          fecha: d.fecha,
+          placa: d.placa,
+          conductor: d.conductor ?? null,
+          origen: d.origen ?? null,
+          horaSalida: d.horaSalida ?? null,
+          auxiliarRuta: d.auxiliarRuta ?? null,
+          tipoDespacho: d.tipoDespacho ?? null,
+          ruta: d.ruta ?? null,
+          docs: d.docs,
+          kilos: d.kilos,
+          clientes: JSON.stringify(d.clientes ?? []),
+          items: JSON.stringify(d.items ?? []),
+        },
+      });
     });
     res.status(201).json({
       ...planilla,
@@ -115,7 +129,7 @@ router.post("/", requireAuth, async (req, res, next) => {
 });
 
 // PATCH /api/planillas/:id  -> edita cabecera e items (recalcula docs/kilos)
-router.patch("/:id", requireAuth, async (req, res, next) => {
+router.patch("/:id", requireAuth, requirePermiso("/planificacion-dl"), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const parsed = patchSchema.safeParse(req.body);
@@ -136,7 +150,8 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
     }
     if (d.impresa !== undefined) {
       data.impresa = d.impresa;
-      data.impresaAt = d.impresa ? new Date() : null;
+      // Al imprimir se sella la fecha; al desmarcar NO se borra (permite distinguir "reimpresión").
+      if (d.impresa) data.impresaAt = new Date();
     }
     if (d.items !== undefined) {
       const items = d.items;
@@ -157,7 +172,7 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
 });
 
 // DELETE /api/planillas/:id
-router.delete("/:id", requireAuth, async (req, res, next) => {
+router.delete("/:id", requireAuth, requirePermiso("/planificacion-dl"), async (req, res, next) => {
   try {
     await prisma.planillaDespacho.delete({ where: { id: String(req.params.id) } });
     res.json({ eliminado: true });
@@ -169,35 +184,15 @@ router.delete("/:id", requireAuth, async (req, res, next) => {
 // POST /api/planillas/:id/anular — anula la planilla actual y crea una nueva copia con nuevo consecutivo.
 // Acepta un body opcional con los datos NUEVOS (placa, conductor, auxiliarRuta, ruta, tipoDespacho, items)
 // para reflejar el cambio en la planilla nueva; la original queda intacta salvo la marca de anulada.
-router.post("/:id/anular", requireAuth, async (req, res, next) => {
+router.post("/:id/anular", requireAuth, requirePermiso("/planificacion-dl"), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const original = await prisma.planillaDespacho.findUnique({ where: { id } });
     if (!original) throw new HttpError(404, "Planilla no encontrada");
 
-    const b = (req.body ?? {}) as {
-      placa?: string;
-      conductor?: string | null;
-      auxiliarRuta?: string | null;
-      ruta?: string | null;
-      tipoDespacho?: string | null;
-      items?: { numeroOrden: string; kg: number }[];
-      clientes?: string[];
-    };
-
-    // Marcar la original como anulada
-    await prisma.planillaDespacho.update({
-      where: { id },
-      data: { anulada: true, anuladaAt: new Date() },
-    });
-
-    // Obtener siguiente consecutivo
-    const last = await prisma.planillaDespacho.findFirst({
-      orderBy: { consecutivo: "desc" },
-      select: { consecutivo: true },
-    });
-
-    const nuevaConsecutivo = (last?.consecutivo ?? 0) + 1;
+    const parsed = anularSchema.safeParse(req.body ?? {});
+    if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
+    const b = parsed.data;
 
     // Datos de la nueva planilla: override si viene, si no los de la original.
     let itemsStr = original.items;
@@ -211,29 +206,41 @@ router.post("/:id/anular", requireAuth, async (req, res, next) => {
       if (Array.isArray(b.clientes)) clientesStr = JSON.stringify(b.clientes);
     }
 
-    const nueva = await prisma.planillaDespacho.create({
-      data: {
-        consecutivo: nuevaConsecutivo,
-        fecha: original.fecha,
-        placa: b.placa?.trim() ? b.placa.trim() : original.placa,
-        conductor: b.conductor !== undefined ? (b.conductor ?? null) : original.conductor,
-        origen: original.origen,
-        horaSalida: original.horaSalida,
-        auxiliarRuta: b.auxiliarRuta !== undefined ? (b.auxiliarRuta ?? null) : original.auxiliarRuta,
-        tipoDespacho: b.tipoDespacho !== undefined ? (b.tipoDespacho ?? null) : original.tipoDespacho,
-        ruta: b.ruta !== undefined ? (b.ruta ?? null) : original.ruta,
-        docs,
-        kilos,
-        clientes: clientesStr,
-        items: itemsStr,
-        reemplazaDeConsecutivo: original.consecutivo,
-      },
-    });
-
-    // Actualizar original con referencia a la nueva
-    await prisma.planillaDespacho.update({
-      where: { id },
-      data: { reemplazadaPorConsecutivo: nuevaConsecutivo },
+    // Anula la original y crea la nueva de forma atómica con lock de consecutivo.
+    const nueva = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(1001)`;
+      await tx.planillaDespacho.update({
+        where: { id },
+        data: { anulada: true, anuladaAt: new Date() },
+      });
+      const last = await tx.planillaDespacho.findFirst({
+        orderBy: { consecutivo: "desc" },
+        select: { consecutivo: true },
+      });
+      const nuevaConsecutivo = (last?.consecutivo ?? 0) + 1;
+      const creada = await tx.planillaDespacho.create({
+        data: {
+          consecutivo: nuevaConsecutivo,
+          fecha: original.fecha,
+          placa: b.placa?.trim() ? b.placa.trim() : original.placa,
+          conductor: b.conductor !== undefined ? (b.conductor ?? null) : original.conductor,
+          origen: original.origen,
+          horaSalida: original.horaSalida,
+          auxiliarRuta: b.auxiliarRuta !== undefined ? (b.auxiliarRuta ?? null) : original.auxiliarRuta,
+          tipoDespacho: b.tipoDespacho !== undefined ? (b.tipoDespacho ?? null) : original.tipoDespacho,
+          ruta: b.ruta !== undefined ? (b.ruta ?? null) : original.ruta,
+          docs,
+          kilos,
+          clientes: clientesStr,
+          items: itemsStr,
+          reemplazaDeConsecutivo: original.consecutivo,
+        },
+      });
+      await tx.planillaDespacho.update({
+        where: { id },
+        data: { reemplazadaPorConsecutivo: nuevaConsecutivo },
+      });
+      return creada;
     });
 
     res.status(201).json({

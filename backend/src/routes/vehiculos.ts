@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { HttpError } from "../middleware/errorHandler";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requirePermiso } from "../middleware/auth";
 import { env } from "../config/env";
 
 const router = Router();
@@ -166,7 +166,7 @@ const capacidadRealSchema = z.object({
     }),
 });
 
-router.patch("/capacidad-real", requireAuth, async (req, res, next) => {
+router.patch("/capacidad-real", requireAuth, requirePermiso("/configuracion/vehiculos"), async (req, res, next) => {
   try {
     const parsed = capacidadRealSchema.safeParse(req.body);
     if (!parsed.success) {

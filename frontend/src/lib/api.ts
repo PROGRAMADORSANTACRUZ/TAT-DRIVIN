@@ -6,6 +6,7 @@ export interface AuthUser {
   cedula: string;
   name: string | null;
   role: string;
+  permisos?: string[] | null;
 }
 
 export interface LoginResponse {
@@ -134,6 +135,7 @@ export interface AppUser {
   cedula: string;
   name: string | null;
   role: "USER" | "ADMIN" | "DEVELOPER";
+  permisos: string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -143,6 +145,7 @@ export interface AppUserInput {
   name: string;
   role: "USER" | "ADMIN" | "DEVELOPER";
   password?: string;
+  permisos?: string[] | null;
 }
 
 export function getUsers(): Promise<AppUser[]> {
@@ -711,7 +714,7 @@ export function marcarImpresa(id: string): Promise<Planilla> {
 }
 
 // ── Novedades (nivel de servicio) ──────────────────────────────────────────
-export type NovedadEstado = "Pendiente" | "En proceso" | "Resuelta";
+export type NovedadEstado = "Pendiente" | "En tramitación" | "Resuelto" | "Cerrada";
 export type NovedadPrioridad = "Alta" | "Media" | "Baja";
 export type NivelEstado = "Sin Novedad" | "Con Novedad" | "Doc.Pendiente" | "Reenvio" | "Rechazado" | "Parcial Con Novedad";
 
@@ -780,4 +783,133 @@ export function eliminarNovedad(id: string): Promise<{ eliminado: boolean }> {
   return request<{ eliminado: boolean }>(`/api/novedades/${id}`, {
     method: "DELETE",
   });
+}
+
+// ── Configuración (auxiliares, rutas, nombres de planes, cambios) ───────────
+export interface Auxiliar {
+  id: string;
+  nombre: string;
+  telefono?: string | null;
+  orden?: number;
+}
+
+export interface Ruta {
+  id: string;
+  nombre: string;
+  recorrido?: string | null;
+  ciudad?: string | null;
+  kls?: number | null;
+  tiempo?: string | null;
+  grupo?: string | null;
+  orden?: number;
+}
+
+export interface PlanNombre {
+  id: string;
+  nombre: string;
+  tipo?: string | null;
+  orden?: number;
+}
+
+export function getAuxiliares(): Promise<Auxiliar[]> {
+  return request<Auxiliar[]>("/api/config/auxiliares");
+}
+
+export function saveAuxiliares(data: Auxiliar[]): Promise<Auxiliar[]> {
+  return request<Auxiliar[]>("/api/config/auxiliares", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function getRutas(): Promise<Ruta[]> {
+  return request<Ruta[]>("/api/config/rutas");
+}
+
+export function saveRutas(data: Ruta[]): Promise<Ruta[]> {
+  return request<Ruta[]>("/api/config/rutas", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export function getPlanNombres(): Promise<PlanNombre[]> {
+  return request<PlanNombre[]>("/api/config/plan-nombres");
+}
+
+export function savePlanNombres(data: PlanNombre[]): Promise<PlanNombre[]> {
+  return request<PlanNombre[]>("/api/config/plan-nombres", {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
+
+export type TipoCambio = "movimiento" | "anulacion" | "reimpresion" | "liberacion";
+
+export interface CambioDespacho {
+  id: string;
+  tipo: TipoCambio;
+  remision?: string | null;
+  deVehiculo?: string | null;
+  aVehiculo?: string | null;
+  dlOrigen?: number | null;
+  dlNuevo?: number | null;
+  detalle?: string | null;
+  hecho: boolean;
+  createdAt: string;
+}
+
+export type CambioInput = {
+  tipo: TipoCambio;
+  remision?: string | null;
+  deVehiculo?: string | null;
+  aVehiculo?: string | null;
+  dlOrigen?: number | null;
+  dlNuevo?: number | null;
+  detalle?: string | null;
+};
+
+export function getCambios(): Promise<CambioDespacho[]> {
+  return request<CambioDespacho[]>("/api/config/cambios");
+}
+
+export function addCambio(data: CambioInput): Promise<CambioDespacho> {
+  return request<CambioDespacho>("/api/config/cambios", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export function marcarCambioHecho(id: string, hecho: boolean): Promise<CambioDespacho> {
+  return request<CambioDespacho>(`/api/config/cambios/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ hecho }),
+  });
+}
+
+export function limpiarCambiosHechos(): Promise<{ eliminados: number }> {
+  return request<{ eliminados: number }>("/api/config/cambios/hechos", {
+    method: "DELETE",
+  });
+}
+
+// ── Resumen de órdenes (dashboard) ──────────────────────────────────────────
+export interface OrdenesResumen {
+  totalOrdenes: number;
+  vivas: number;
+  asignadas: number;
+  sinAsig: number;
+  enviadas: number;
+  entregadas: number;
+  rechazadas: number;
+  reenviadas: number;
+  kilosVivas: number;
+  kilosEnviadas: number;
+  tat: number;
+  agro: number;
+  vehiculosConCarga: number;
+}
+
+export function getResumen(): Promise<OrdenesResumen> {
+  return request<OrdenesResumen>("/api/ordenes/resumen");
 }

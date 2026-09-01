@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { HttpError } from "../middleware/errorHandler";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requirePermiso } from "../middleware/auth";
 import { env } from "../config/env";
 import { normalizarDireccion } from "../lib/direccion";
 
@@ -59,7 +59,7 @@ router.get("/", requireAuth, async (_req, res, next) => {
 });
 
 // POST /api/clientes-tat/:id/consecutivo  -> asigna un concatenado al cliente TAT
-router.post("/:id/consecutivo", requireAuth, async (req, res, next) => {
+router.post("/:id/consecutivo", requireAuth, requirePermiso("/configuracion/clientes"), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const nuevo = String(req.body?.consecutivo ?? "").trim();
@@ -81,7 +81,7 @@ router.post("/:id/consecutivo", requireAuth, async (req, res, next) => {
 });
 
 // POST /api/clientes-tat/sync  -> actualiza y agrega, respetando ediciones manuales
-router.post("/sync", requireAuth, async (_req, res, next) => {
+router.post("/sync", requireAuth, requirePermiso("/configuracion/clientes"), async (_req, res, next) => {
   try {
     const resp = await fetch(env.CLIENTES_TAT_URL);
     if (!resp.ok) {
@@ -176,7 +176,7 @@ router.post("/sync", requireAuth, async (_req, res, next) => {
 });
 
 // PUT /api/clientes-tat/:id  -> edita un cliente y lo marca como corregido
-router.put("/:id", requireAuth, async (req, res, next) => {
+router.put("/:id", requireAuth, requirePermiso("/configuracion/clientes"), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const existe = await prisma.clienteTat.findUnique({ where: { id } });
@@ -232,7 +232,7 @@ router.put("/:id", requireAuth, async (req, res, next) => {
 });
 
 // DELETE /api/clientes-tat/:id  -> borrado lógico (no reaparece al sincronizar)
-router.delete("/:id", requireAuth, async (req, res, next) => {
+router.delete("/:id", requireAuth, requirePermiso("/configuracion/clientes"), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const existe = await prisma.clienteTat.findUnique({ where: { id } });

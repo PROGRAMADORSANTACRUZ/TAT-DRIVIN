@@ -10,6 +10,7 @@ import clientesTatRouter from "./clientes-tat";
 import planesRouter from "./planes";
 import planillasRouter from "./planillas";
 import novedadesRouter from "./novedades";
+import configRouter from "./config";
 
 const router = Router();
 
@@ -24,5 +25,6 @@ router.use("/clientes-tat", clientesTatRouter);
 router.use("/planes", planesRouter);
 router.use("/planillas", planillasRouter);
 router.use("/novedades", novedadesRouter);
+router.use("/config", configRouter);
 
 export default router;

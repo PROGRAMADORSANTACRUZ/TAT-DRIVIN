@@ -6,6 +6,7 @@ import SearchInput from "@/components/SearchInput";
 import { SkeletonStat, SkeletonTable } from "@/components/Loading";
 import { ApiError, getPlanillas, type Planilla } from "@/lib/api";
 import { docRI, docRIT, imprimirDocumento } from "@/lib/planillaDocs";
+import { dlLabel } from "@/lib/utils";
 
 const fmtKg = (n: number) =>
   n.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -141,13 +142,13 @@ export default function HistoricosPage() {
                 {paginado.map((p) => (
                   <tr key={p.id} className={`hover:bg-[#f9fbf7] ${p.anulada ? "opacity-50" : ""}`}>
                     <td className="px-4 py-3 font-semibold text-[#14352a]">
-                      {String(p.consecutivo).padStart(5, "0")}
+                      {dlLabel(p.consecutivo)}
                       {p.anulada && <span className="ml-1.5 rounded bg-[#fbeceb] px-1.5 py-0.5 text-[10px] font-bold text-[#b3261e]">ANULADA</span>}
                       {p.anulada && p.reemplazadaPorConsecutivo && (
-                        <div className="text-[10px] text-[#7a8794]">Reemplazada por #{String(p.reemplazadaPorConsecutivo).padStart(5, "0")}</div>
+                        <div className="text-[10px] text-[#7a8794]">Reemplazada por {dlLabel(p.reemplazadaPorConsecutivo)}</div>
                       )}
                       {p.reemplazaDeConsecutivo && (
-                        <div className="text-[10px] text-[#2f8f4e]">En reemplazo de #{String(p.reemplazaDeConsecutivo).padStart(5, "0")}</div>
+                        <div className="text-[10px] text-[#2f8f4e]">En reemplazo de {dlLabel(p.reemplazaDeConsecutivo)}</div>
                       )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-[#45505e]">{p.fecha || new Date(p.createdAt).toLocaleDateString("es-CO")}</td>

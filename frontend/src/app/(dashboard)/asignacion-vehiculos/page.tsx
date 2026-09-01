@@ -77,6 +77,8 @@ export default function AsignacionVehiculosPage() {
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const [buscarOrd, setBuscarOrd] = useState("");
   const [verAsignadas, setVerAsignadas] = useState(false);
+  // Filtro por tipo de distribución en órdenes pendientes.
+  const [filtroDist, setFiltroDist] = useState<"" | "TAT" | "GS">("");
   const [verDiagrama, setVerDiagrama] = useState(false);
   const [buscarAsig, setBuscarAsig] = useState("");
   const [seleccionAsig, setSeleccionAsig] = useState<Set<string>>(new Set());
@@ -155,13 +157,13 @@ export default function AsignacionVehiculosPage() {
     pendientes.filter((g) => g.asignado === placa);
 
   const to = buscarOrd.trim().toLowerCase();
-  const pendientesFiltrados = to
-    ? sinAsignarGrupos.filter((g) =>
-        [g.numeroOrden, g.cliente, g.destino].some((f) =>
-          f?.toLowerCase().includes(to)
-        )
-      )
-    : sinAsignarGrupos;
+  const pendientesFiltrados = sinAsignarGrupos
+    .filter((g) => (filtroDist === "" ? true : filtroDist === "TAT" ? g.distribucion === "TAT" : g.distribucion !== "TAT"))
+    .filter((g) =>
+      to
+        ? [g.numeroOrden, g.cliente, g.destino].some((f) => f?.toLowerCase().includes(to))
+        : true
+    );
 
   const ta = buscarAsig.trim().toLowerCase();
   const asignadasFiltradas = ta
@@ -288,8 +290,8 @@ export default function AsignacionVehiculosPage() {
     setPlanesExistentes([]);
     setPlanModal(true);
     const DEFAULTS = ["Distribucion Rutas Agropecuaria", "Distribucion Rutas TAT"];
-    getSchemas().then((s) => setSchemas([...new Set([...DEFAULTS, ...s])].sort())).catch(() => {});
-    getFlotas().then((f) => setFlotas(f)).catch(() => {});
+    getSchemas().then((s) => setSchemas([...new Set([...DEFAULTS, ...s])].sort())).catch((err) => console.error(err));
+    getFlotas().then((f) => setFlotas(f)).catch((err) => console.error(err));
     // Carga planes activos del día
     setLoadingPlanes(true);
     getPlanes(hoy)
@@ -298,7 +300,7 @@ export default function AsignacionVehiculosPage() {
         setPlanesExistentes(activos);
         if (activos.length > 0) setPlanTokenSel(activos[0].token);
       })
-      .catch(() => {})
+      .catch((err) => console.error(err))
       .finally(() => setLoadingPlanes(false));
   }
 
@@ -480,6 +482,25 @@ export default function AsignacionVehiculosPage() {
                       Ver asignadas ({conAsignacionGrupos.length})
                     </button>
                   )}
+                  {/* Filtro por tipo de distribución */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setFiltroDist(filtroDist === "GS" ? "" : "GS")}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                        filtroDist === "GS" ? "bg-[#2f8f4e] text-white" : "bg-[#e8f3e2] text-[#2f8f4e] hover:bg-[#d7eccd]"
+                      }`}
+                    >
+                      Grandes Superficies
+                    </button>
+                    <button
+                      onClick={() => setFiltroDist(filtroDist === "TAT" ? "" : "TAT")}
+                      className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                        filtroDist === "TAT" ? "bg-[#b5731e] text-white" : "bg-[#fef3e6] text-[#b5731e] hover:bg-[#fbe6cd]"
+                      }`}
+                    >
+                      TAT
+                    </button>
+                  </div>
                   {rechazadosGrupos.length > 0 && (
                     <button
                       onClick={() => setVerRechazados(true)}

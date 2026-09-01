@@ -13,12 +13,14 @@ import {
   getPlanillas,
   syncEstadoDrivin,
   type NivelEstado,
+  type NovedadEstado,
   type Novedad,
   type Orden,
   type Planilla,
   type PlanillaItem,
 } from "@/lib/api";
 import { docNovedad, imprimirNovedad } from "@/lib/novedadDoc";
+import { dlLabel, rnLabel } from "@/lib/utils";
 
 const NIVEL_ESTADOS: NivelEstado[] = ["Sin Novedad", "Con Novedad", "Doc.Pendiente", "Reenvio", "Rechazado", "Parcial Con Novedad"];
 // Estados que se muestran como tarjetas de estadística (sin Rechazado ni Parcial Con Novedad).
@@ -95,6 +97,9 @@ export default function NivelServicioPage() {
   const [reportando, setReportando] = useState<{ planillaId: string; item: PlanillaItem; planilla: Planilla } | null>(null);
   const [noLlegoData, setNoLlegoData] = useState<NoLlegoItem[]>([]);
   const [savingModal, setSavingModal] = useState(false);
+
+  // Modal de resolución de novedad
+  const [resolviendo, setResolviendo] = useState<{ key: string; planillaId: string; item: PlanillaItem; planilla: Planilla; novedad: Novedad | null } | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -419,7 +424,12 @@ export default function NivelServicioPage() {
                   const key = `${planillaId}|${item.numeroOrden}`;
                   const draft = drafts.get(key) ?? { estadoEntrega: "Sin Novedad" as NivelEstado, novedad: "", responsabilidad: "", descripcion: "" };
                   const isSaving = saving.has(key);
-                  const s = ESTADO_STYLE[draft.estadoEntrega];
+                  // Si la novedad ya está resuelta/cerrada, se muestra en ámbar (no rojo) para distinguir pendientes.
+                  const novEstado = novedadMap.get(key)?.estado;
+                  const resuelta = novEstado === "Resuelto" || novEstado === "Cerrada";
+                  const s = resuelta && draft.estadoEntrega !== "Sin Novedad"
+                    ? { border: "border-[#a86a12]", text: "text-[#a86a12]", bg: "bg-[#fdf6e9]", dot: "bg-[#a86a12]" }
+                    : ESTADO_STYLE[draft.estadoEntrega];
 
                   return (
                     <tr key={key} className="hover:bg-[#f9fbf7]">
@@ -431,8 +441,11 @@ export default function NivelServicioPage() {
                       </td>
                       {/* Documento + consecutivo planilla */}
                       <td className="px-4 py-2.5">
+                        {novedadMap.get(key) && (
+                          <div className="text-[10px] font-bold text-[#4a6fa5]">{rnLabel(novedadMap.get(key)!.consecutivo)}</div>
+                        )}
                         <div className="font-mono text-xs font-semibold text-[#14352a]">{item.numeroOrden}</div>
-                        <div className="text-[10px] text-[#7a8794]">DL #{String(planilla.consecutivo).padStart(5, "0")}</div>
+                        <div className="text-[10px] text-[#7a8794]">{dlLabel(planilla.consecutivo)}</div>
                       </td>
                       {/* Cliente / Destino */}
                       <td className="px-4 py-2.5">
@@ -467,18 +480,42 @@ export default function NivelServicioPage() {
                               <path d="M16.5 9.4l-9-5.19"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
                             </svg>
                           </button>
-                          {/* PDF — solo si hay novedad guardada */}
-                          {novedadMap.get(key) && (
-                            <button
-                              onClick={() => imprimirNovedad(docNovedad(novedadMap.get(key)!))}
-                              title="Generar PDF de novedad"
-                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#dfe4e0] bg-white text-[#45505e] hover:bg-[#f4f6f3]"
-                            >
+                          {/* PDF — disponible en todas las filas (usa la novedad guardada o los datos actuales) */}
+                          <button
+                            onClick={() => {
+                              const guardada = novedadMap.get(key);
+                              const docData: Novedad = guardada ?? {
+                                id: "",
+                                consecutivo: 0,
+                                fecha: planilla.fecha || new Date(planilla.createdAt).toISOString().slice(0, 10),
+                                tipo: "",
+                                prioridad: "Media",
+                                estado: "Pendiente",
+                                estadoEntrega: draft.estadoEntrega,
+                                novedad: draft.novedad || null,
+                                responsabilidad: draft.responsabilidad || null,
+                                noLlego: null,
+                                planillaId,
+                                placa: planilla.placa,
+                                conductor: planilla.conductor,
+                                auxiliarRuta: planilla.auxiliarRuta,
+                                cliente: item.cliente,
+                                numeroOrden: item.numeroOrden,
+                                descripcion: draft.descripcion || "",
+                                resolucion: null,
+                                resueltaAt: null,
+                                createdAt: new Date().toISOString(),
+                                updatedAt: new Date().toISOString(),
+                              };
+                              imprimirNovedad(docNovedad(docData));
+                            }}
+                            title="Generar PDF del documento"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#dfe4e0] bg-white text-[#45505e] hover:bg-[#f4f6f3]"
+                          >
                               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                                 <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
                               </svg>
                             </button>
-                          )}
                         </div>
                       </td>
                       {/* Novedades */}
@@ -517,6 +554,29 @@ export default function NivelServicioPage() {
                           placeholder="Escribe detalles..."
                           className="w-52 rounded-lg border border-[#dfe4e0] bg-white px-2.5 py-1.5 text-xs text-[#14352a] placeholder:text-[#b0b9b3] outline-none transition focus:border-[#2f8f4e] focus:ring-1 focus:ring-[#2f8f4e]/20"
                         />
+                      </td>
+                      {/* Resolución */}
+                      <td className="px-4 py-2.5">
+                        {(() => {
+                          const nov = novedadMap.get(key) ?? null;
+                          const est = nov?.estado ?? "Pendiente";
+                          const estStyle =
+                            est === "Resuelto" ? "bg-[#e8f3e2] text-[#2f8f4e]" :
+                            est === "Cerrada" ? "bg-[#eceef0] text-[#6b7683]" :
+                            est === "En tramitación" ? "bg-[#fdf6e9] text-[#a86a12]" :
+                            "bg-[#f0f1f2] text-[#7a8794]";
+                          return (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setResolviendo({ key, planillaId, item, planilla, novedad: nov })}
+                                className="rounded-lg border border-[#dfe4e0] bg-white px-2.5 py-1.5 text-xs font-medium text-[#45505e] hover:bg-[#f4f6f3]"
+                              >
+                                Resolución
+                              </button>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${estStyle}`}>{est}</span>
+                            </div>
+                          );
+                        })()}
                       </td>
                     </tr>
                   );
@@ -559,6 +619,15 @@ export default function NivelServicioPage() {
           </div>
         )}
       </div>
+
+      {/* Modal: Resolución de novedad */}
+      {resolviendo && (
+        <ResolucionModal
+          data={resolviendo}
+          onClose={() => setResolviendo(null)}
+          onSaved={async () => { setResolviendo(null); await load(false); }}
+        />
+      )}
 
       {/* Modal: Reportar Novedad (kg no recibidos) */}
       {reportando && (
@@ -620,6 +689,84 @@ export default function NivelServicioPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ResolucionModal({
+  data,
+  onClose,
+  onSaved,
+}: {
+  data: { key: string; planillaId: string; item: PlanillaItem; planilla: Planilla; novedad: Novedad | null };
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { item, planilla, novedad } = data;
+  const [resolucion, setResolucion] = useState(novedad?.resolucion ?? "");
+  const [estado, setEstado] = useState<NovedadEstado>(novedad?.estado ?? "Pendiente");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const ESTADOS: NovedadEstado[] = ["Pendiente", "En tramitación", "Resuelto", "Cerrada"];
+
+  async function guardar() {
+    setSaving(true);
+    setError(null);
+    try {
+      if (novedad) {
+        await editarNovedad(novedad.id, { resolucion: resolucion.trim() || null, estado });
+      } else {
+        await crearNovedad({
+          planillaId: data.planillaId,
+          numeroOrden: item.numeroOrden,
+          cliente: item.cliente,
+          placa: planilla.placa,
+          conductor: planilla.conductor,
+          auxiliarRuta: planilla.auxiliarRuta,
+          fecha: planilla.fecha || new Date(planilla.createdAt).toISOString().slice(0, 10),
+          estadoEntrega: "Con Novedad",
+          resolucion: resolucion.trim() || null,
+          estado,
+        });
+      }
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo guardar");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-start justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-[#14352a]">Resolución de novedad</h3>
+            <p className="text-xs text-[#7a8794]">
+              {novedad ? rnLabel(novedad.consecutivo) : "Nueva"} · Doc {item.numeroOrden} · {planilla.placa}
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-[#7a8794] hover:bg-[#f4f6f3]">
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 18 18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        {error && <div className="mb-3 rounded-lg border border-[#f0c4c1] bg-[#fbeceb] px-3 py-2 text-sm text-[#b3261e]">{error}</div>}
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-[#7a8794]">Resolución</span>
+          <textarea value={resolucion} onChange={(e) => setResolucion(e.target.value)} rows={4} placeholder="Describe cómo se resolvió la novedad…" className="rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm text-[#14352a] outline-none focus:border-[#2f8f4e]" />
+        </label>
+        <label className="mt-3 flex flex-col gap-1">
+          <span className="text-xs font-medium text-[#7a8794]">Estado</span>
+          <select value={estado} onChange={(e) => setEstado(e.target.value as NovedadEstado)} className="rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm text-[#14352a] outline-none focus:border-[#2f8f4e]">
+            {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
+          </select>
+        </label>
+        <div className="mt-5 flex items-center justify-end gap-3">
+          <button onClick={onClose} disabled={saving} className="rounded-lg border border-[#dfe4e0] px-4 py-2.5 text-sm font-medium text-[#45505e] hover:bg-[#f4f6f3] disabled:opacity-50">Cancelar</button>
+          <button onClick={guardar} disabled={saving} className="rounded-lg bg-[#2f8f4e] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#277a42] disabled:opacity-50">{saving ? "Guardando…" : "Guardar"}</button>
+        </div>
+      </div>
     </div>
   );
 }
