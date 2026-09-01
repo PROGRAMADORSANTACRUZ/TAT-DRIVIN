@@ -155,7 +155,6 @@ const ESTADO_COLOR: Record<string, string> = {
   "Reenvio":    "#4a6fa5",
 };
 
-// -"€-"€ Página -"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€-"€
 export default function DashboardPage() {
   const [ordenes, setOrdenes] = useState<Orden[]>([]);
   const [planillas, setPlanillas] = useState<Planilla[]>([]);
@@ -388,7 +387,7 @@ export default function DashboardPage() {
             {/* Barras verticales -€" últimos 7 días */}
             <div className="rounded-2xl border border-[#e1e9dd] bg-white p-5 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-[#14352a]">Planillas -€" últimos 7 días</h2>
+                <h2 className="text-sm font-semibold text-[#14352a]">Planillas últimos 7 días</h2>
                 <span className="text-xs text-[#7a8794]">total: {m.dias7.reduce((s, d) => s + d.value, 0)}</span>
               </div>
               <SparkBars data={m.dias7} />

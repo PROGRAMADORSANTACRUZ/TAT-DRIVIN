@@ -686,9 +686,23 @@ export function eliminarPlanilla(id: string): Promise<{ eliminado: boolean }> {
   });
 }
 
-export function anularPlanilla(id: string): Promise<{ anulada: Planilla; nueva: Planilla }> {
+export interface AnularPlanillaOverride {
+  placa?: string;
+  conductor?: string | null;
+  auxiliarRuta?: string | null;
+  ruta?: string | null;
+  tipoDespacho?: string | null;
+  items?: PlanillaItem[];
+  clientes?: string[];
+}
+
+export function anularPlanilla(
+  id: string,
+  override?: AnularPlanillaOverride
+): Promise<{ anulada: Planilla; nueva: Planilla }> {
   return request<{ anulada: Planilla; nueva: Planilla }>(`/api/planillas/${id}/anular`, {
     method: "POST",
+    body: JSON.stringify(override ?? {}),
   });
 }
 

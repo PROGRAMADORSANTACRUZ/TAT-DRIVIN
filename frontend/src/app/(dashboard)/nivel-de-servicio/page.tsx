@@ -443,18 +443,12 @@ export default function NivelServicioPage() {
                       <td className="px-4 py-2.5 text-right tabular-nums text-sm font-medium text-[#14352a]">{fmtKg(item.kg)}</td>
                       {/* Estado dropdown estilizado */}
                       <td className="px-4 py-2.5">
-                        <div className={`relative inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${s.border} ${s.bg}`}>
+                        <div className={`relative inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${s.border} ${s.bg}`} title="El estado se sincroniza desde Drivin">
                           {isSaving && (
                             <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[#a86a12] animate-pulse ring-2 ring-white" />
                           )}
                           <span className={`h-2 w-2 rounded-full shrink-0 ${s.dot}`} />
-                          <select
-                            value={draft.estadoEntrega}
-                            onChange={(e) => updateDraft(planillaId, item, planilla, { estadoEntrega: e.target.value as NivelEstado })}
-                            className={`cursor-pointer bg-transparent text-xs font-semibold outline-none ${s.text}`}
-                          >
-                            {NIVEL_ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
-                          </select>
+                          <span className={`text-xs font-semibold ${s.text}`}>{draft.estadoEntrega}</span>
                         </div>
                       </td>
                       {/* Botón reportar kg */}
@@ -492,9 +486,7 @@ export default function NivelServicioPage() {
                         <select
                           value={draft.novedad}
                           onChange={(e) => {
-                            const patch: Partial<RowDraft> = { novedad: e.target.value };
-                            if (e.target.value && draft.estadoEntrega === "Sin Novedad") patch.estadoEntrega = "Con Novedad";
-                            updateDraft(planillaId, item, planilla, patch);
+                            updateDraft(planillaId, item, planilla, { novedad: e.target.value });
                           }}
                           className="w-52 rounded-lg border border-[#dfe4e0] bg-white px-2.5 py-1.5 text-xs text-[#14352a] outline-none transition focus:border-[#2f8f4e] focus:ring-1 focus:ring-[#2f8f4e]/20"
                         >
@@ -507,9 +499,7 @@ export default function NivelServicioPage() {
                         <select
                           value={draft.responsabilidad}
                           onChange={(e) => {
-                            const patch: Partial<RowDraft> = { responsabilidad: e.target.value };
-                            if (e.target.value && draft.estadoEntrega === "Sin Novedad") patch.estadoEntrega = "Con Novedad";
-                            updateDraft(planillaId, item, planilla, patch);
+                            updateDraft(planillaId, item, planilla, { responsabilidad: e.target.value });
                           }}
                           className="w-44 rounded-lg border border-[#dfe4e0] bg-white px-2.5 py-1.5 text-xs text-[#14352a] outline-none transition focus:border-[#2f8f4e] focus:ring-1 focus:ring-[#2f8f4e]/20"
                         >

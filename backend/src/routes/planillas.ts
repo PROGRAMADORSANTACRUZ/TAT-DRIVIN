@@ -166,12 +166,24 @@ router.delete("/:id", requireAuth, async (req, res, next) => {
   }
 });
 
-// POST /api/planillas/:id/anular — anula la planilla actual y crea una nueva copia con nuevo consecutivo
+// POST /api/planillas/:id/anular — anula la planilla actual y crea una nueva copia con nuevo consecutivo.
+// Acepta un body opcional con los datos NUEVOS (placa, conductor, auxiliarRuta, ruta, tipoDespacho, items)
+// para reflejar el cambio en la planilla nueva; la original queda intacta salvo la marca de anulada.
 router.post("/:id/anular", requireAuth, async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const original = await prisma.planillaDespacho.findUnique({ where: { id } });
     if (!original) throw new HttpError(404, "Planilla no encontrada");
+
+    const b = (req.body ?? {}) as {
+      placa?: string;
+      conductor?: string | null;
+      auxiliarRuta?: string | null;
+      ruta?: string | null;
+      tipoDespacho?: string | null;
+      items?: { numeroOrden: string; kg: number }[];
+      clientes?: string[];
+    };
 
     // Marcar la original como anulada
     await prisma.planillaDespacho.update({
@@ -187,21 +199,33 @@ router.post("/:id/anular", requireAuth, async (req, res, next) => {
 
     const nuevaConsecutivo = (last?.consecutivo ?? 0) + 1;
 
+    // Datos de la nueva planilla: override si viene, si no los de la original.
+    let itemsStr = original.items;
+    let docs = original.docs;
+    let kilos = original.kilos;
+    let clientesStr = original.clientes;
+    if (Array.isArray(b.items)) {
+      itemsStr = JSON.stringify(b.items);
+      docs = new Set(b.items.map((i) => i.numeroOrden)).size;
+      kilos = b.items.reduce((s, i) => s + (Number(i.kg) || 0), 0);
+      if (Array.isArray(b.clientes)) clientesStr = JSON.stringify(b.clientes);
+    }
+
     const nueva = await prisma.planillaDespacho.create({
       data: {
         consecutivo: nuevaConsecutivo,
         fecha: original.fecha,
-        placa: original.placa,
-        conductor: original.conductor,
+        placa: b.placa?.trim() ? b.placa.trim() : original.placa,
+        conductor: b.conductor !== undefined ? (b.conductor ?? null) : original.conductor,
         origen: original.origen,
         horaSalida: original.horaSalida,
-        auxiliarRuta: original.auxiliarRuta,
-        tipoDespacho: original.tipoDespacho,
-        ruta: original.ruta,
-        docs: original.docs,
-        kilos: original.kilos,
-        clientes: original.clientes,
-        items: original.items,
+        auxiliarRuta: b.auxiliarRuta !== undefined ? (b.auxiliarRuta ?? null) : original.auxiliarRuta,
+        tipoDespacho: b.tipoDespacho !== undefined ? (b.tipoDespacho ?? null) : original.tipoDespacho,
+        ruta: b.ruta !== undefined ? (b.ruta ?? null) : original.ruta,
+        docs,
+        kilos,
+        clientes: clientesStr,
+        items: itemsStr,
         reemplazaDeConsecutivo: original.consecutivo,
       },
     });

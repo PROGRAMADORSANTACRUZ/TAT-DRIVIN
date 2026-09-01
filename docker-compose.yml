@@ -17,7 +17,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
-      CORS_ORIGIN: ${CORS_ORIGIN:-https://distlog.grupo-santacruz.com}
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://distrilog.grupo-santacruz.com}
       DRIVIN_API_URL: ${DRIVIN_API_URL:-https://external.driv.in/api/external}
       DRIVIN_API_KEY: ${DRIVIN_API_KEY}
       CLIENTES_TAT_URL: ${CLIENTES_TAT_URL:-https://apiconsulta.grupo-santacruz.com/clientes-tat}
@@ -28,12 +28,12 @@ services:
     labels:
       - "dokploy.managed=true"
       - "traefik.enable=true"
-      - "traefik.http.routers.tatdrivin.rule=Host(`distlog.grupo-santacruz.com`)"
+      - "traefik.http.routers.tatdrivin.rule=Host(`distrilog.grupo-santacruz.com`)"
       - "traefik.http.routers.tatdrivin.entrypoints=websecure"
       - "traefik.http.routers.tatdrivin.tls=true"
       - "traefik.http.routers.tatdrivin.tls.certresolver=letsencrypt"
       - "traefik.http.services.tatdrivin.loadbalancer.server.port=80"
-      - "traefik.http.routers.tatdrivin-web.rule=Host(`distlog.grupo-santacruz.com`)"
+      - "traefik.http.routers.tatdrivin-web.rule=Host(`distrilog.grupo-santacruz.com`)"
       - "traefik.http.routers.tatdrivin-web.entrypoints=web"
       - "traefik.http.routers.tatdrivin-web.middlewares=tatdrivin-redirect-https"
       - "traefik.http.middlewares.tatdrivin-redirect-https.redirectscheme.scheme=https"

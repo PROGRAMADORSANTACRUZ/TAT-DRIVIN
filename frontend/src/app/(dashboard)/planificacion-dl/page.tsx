@@ -22,6 +22,7 @@ import {
   type Planilla,
   type PlanillaItem,
   type VehiculoExterno,
+  type AnularPlanillaOverride,
 } from "@/lib/api";
 import { AUXILIARES, RUTAS, TIPOS_DESPACHO, getAuxiliares, getRutas } from "@/data/planillaConfig";
 import { docRI, docRIT, imprimirDocumento } from "@/lib/planillaDocs";
@@ -154,10 +155,12 @@ export default function PlanificacionDLPage() {
     vehiculoActual: string;
   } | null>(null);
   const [destinoItem, setDestinoItem] = useState("");
-  // Estado para confirmar anulación antes de cambiar vehículo en editar
+  // Estado para confirmar anulación antes de cambiar datos de una planilla ya creada.
+  // `override` lleva los datos NUEVOS con los que se creará la planilla de reemplazo.
   const [confirmandoAnulacion, setConfirmandoAnulacion] = useState<{
     planilla: Planilla;
-    accion: "liberar" | string;
+    accion: "liberar" | "mantener" | string;
+    override?: AnularPlanillaOverride;
   } | null>(null);
   const [anulando, setAnulando] = useState(false);
   const [loadingAccion, setLoadingAccion] = useState(false);
@@ -370,18 +373,22 @@ export default function PlanificacionDLPage() {
     setLoadingAccion(true);
     setError(null);
     try {
-      const ids = ordenIdsDePlaca(conf.planilla.placa);
-      if (ids.length > 0) {
-        await asignarOrdenes(ids, conf.accion === "liberar" ? null : conf.accion);
+      // Reasignar las órdenes según la acción: a otro vehículo, liberar, o mantener.
+      if (conf.accion !== "mantener") {
+        const ids = ordenIdsDePlaca(conf.planilla.placa);
+        if (ids.length > 0) {
+          await asignarOrdenes(ids, conf.accion === "liberar" ? null : conf.accion);
+        }
       }
-      await editarPlanilla(conf.planilla.id, { anulada: true });
+      // Anula la original y crea la nueva planilla (con los datos nuevos si los hay).
+      const { nueva } = await anularPlanilla(conf.planilla.id, conf.override);
       setConfirmandoAnulacion(null);
       setMessage(
-        conf.accion === "liberar"
-          ? `Planilla #${conf.planilla.consecutivo} anulada. Órdenes devueltas a asignación.`
-          : `Planilla #${conf.planilla.consecutivo} anulada. Órdenes reasignadas al vehículo ${conf.accion}.`
+        `Planilla #${conf.planilla.consecutivo} anulada. Se creó la #${nueva.consecutivo}. Imprímela.`
       );
       await load();
+      // Abre la nueva para imprimir.
+      setImprimiendoPlanilla(nueva);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al anular planilla");
     } finally {
@@ -740,9 +747,9 @@ export default function PlanificacionDLPage() {
             setMessage("Plantilla actualizada.");
             load();
           }}
-          onAnular={(planilla, accion) => {
+          onAnular={(planilla, accion, override) => {
             setEditando(null);
-            setConfirmandoAnulacion({ planilla, accion });
+            setConfirmandoAnulacion({ planilla, accion, override });
           }}
         />
       )}
@@ -769,6 +776,8 @@ export default function PlanificacionDLPage() {
               La carga será{" "}
               {confirmandoAnulacion.accion === "liberar"
                 ? "devuelta a asignación de vehículos"
+                : confirmandoAnulacion.accion === "mantener"
+                ? "conservada en el mismo vehículo"
                 : `reasignada al vehículo ${confirmandoAnulacion.accion}`}
               .
             </p>
@@ -893,7 +902,7 @@ function EditarPlanillaModal({
   ordenes: Orden[];
   onClose: () => void;
   onSaved: () => void;
-  onAnular: (planilla: Planilla, accion: "liberar" | string) => void;
+  onAnular: (planilla: Planilla, accion: "liberar" | "mantener" | string, override?: AnularPlanillaOverride) => void;
 }) {
   const [placa, setPlaca] = useState(planilla.placa);
   const [auxiliar, setAuxiliar] = useState(planilla.auxiliarRuta ?? "");
@@ -920,42 +929,31 @@ function EditarPlanillaModal({
     setError(null);
     try {
       const conductor = vehiculos.find((v) => v.placa.toUpperCase() === placa.toUpperCase())?.conductor ?? planilla.conductor;
+      const nuevosItems = items.map((i) => ({ ...i, kg: Number(i.kg) || 0 }));
 
-      // Si cambió el vehículo, disparar anulación+reasignación
-      if (placa.toUpperCase() !== planilla.placa.toUpperCase()) {
-        onAnular(planilla, placa);
-        return;
-      }
-
-      // Si la planilla está impresa y cambió cualquier dato (items, auxiliar o ruta),
-      // anularla y regenerar para conservar la trazabilidad del documento ya impreso.
       const itemsOriginales = planilla.items ?? [];
       const itemsCambiaron =
-        items.length !== itemsOriginales.length ||
-        items.some((it, i) => it.numeroOrden !== itemsOriginales[i]?.numeroOrden || Math.abs((Number(it.kg) || 0) - (itemsOriginales[i]?.kg ?? 0)) > 0.01);
+        nuevosItems.length !== itemsOriginales.length ||
+        nuevosItems.some((it, i) => it.numeroOrden !== itemsOriginales[i]?.numeroOrden || Math.abs(it.kg - (itemsOriginales[i]?.kg ?? 0)) > 0.01);
+      const placaCambio = placa.toUpperCase() !== planilla.placa.toUpperCase();
       const auxiliarCambio = (auxiliar || "") !== (planilla.auxiliarRuta ?? "");
       const rutaCambio = (ruta || "") !== (planilla.ruta ?? "");
 
-      if (planilla.impresa && (itemsCambiaron || auxiliarCambio || rutaCambio)) {
-        // Guardar cambios primero, luego anular (crea nueva planilla con los datos actualizados)
-        await editarPlanilla(planilla.id, {
-          placa, conductor,
-          auxiliarRuta: auxiliar || null,
-          ruta: ruta || null,
-          items: items.map((i) => ({ ...i, kg: Number(i.kg) || 0 })),
-        });
-        onAnular({ ...planilla, items: items.map((i) => ({ ...i, kg: Number(i.kg) || 0 })) }, "liberar");
+      // Sin cambios: cerrar sin tocar nada.
+      if (!placaCambio && !auxiliarCambio && !rutaCambio && !itemsCambiaron) {
+        onClose();
         return;
       }
 
-      await editarPlanilla(planilla.id, {
+      // Cualquier cambio en una planilla ya creada → anular la actual y crear una NUEVA
+      // imprimible con los datos nuevos (trazabilidad "reemplazada por / reemplaza de").
+      onAnular(planilla, placaCambio ? placa : "mantener", {
         placa,
         conductor,
         auxiliarRuta: auxiliar || null,
         ruta: ruta || null,
-        items: items.map((i) => ({ ...i, kg: Number(i.kg) || 0 })),
+        items: nuevosItems,
       });
-      onSaved();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al guardar");
     } finally {
