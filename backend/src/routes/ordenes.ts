@@ -893,8 +893,9 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
         };
       });
 
+    // La API no trae facturas para este origen: no es error, no borra lo existente.
     if (data.length === 0) {
-      throw new HttpError(502, "La API no devolvió facturas");
+      return res.status(201).json({ importados: 0, sinCodigo, origen });
     }
 
     // Reemplaza solo las facturas de ese origen, preservando el otro.
