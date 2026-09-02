@@ -571,7 +571,7 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
       }),
       fetchDrivinAddresses(),
       prisma.cliente.findMany({
-        select: { codigoDireccion: true, cliente: true, consecutivos: true },
+        select: { codigoDireccion: true, cliente: true, nombreDireccion: true, direccion: true, comuna: true, provincia: true, lat: true, lon: true, consecutivos: true },
       }),
     ]);
     // Clientes TAT con concatenados (código = codigoTercero).
@@ -595,7 +595,20 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
       if (!porNit.has(nit)) porNit.set(nit, c.codigoTercero);
     }
 
-    const index = buildAddressIndex(addresses);
+    // Incluye el maestro GS como direcciones: así un cliente que existe en nuestra
+    // BD (con su código) resuelve aunque Drivin no lo tenga registrado.
+    const gsAddresses = clientesGS
+      .filter((c) => c.codigoDireccion)
+      .map((c) => ({
+        code: c.codigoDireccion,
+        name: c.nombreDireccion,
+        client: c.cliente,
+        address1: c.direccion,
+        city: c.comuna ?? c.provincia ?? null,
+        lat: c.lat ? parseFloat(c.lat) : null,
+        lng: c.lon ? parseFloat(c.lon) : null,
+      }));
+    const index = buildAddressIndex([...addresses, ...gsAddresses]);
 
     // Mapa de consecutivo (normalizado) -> código del cliente en nuestra BD.
     const porConsecutivo = new Map<string, string | null>();
@@ -743,7 +756,7 @@ async function construirResolverCodigo(): Promise<{
     driviOk = false;
   }
   const [clientesGS, clientesTat, clientesTatNit] = await Promise.all([
-    prisma.cliente.findMany({ select: { codigoDireccion: true, consecutivos: true } }),
+    prisma.cliente.findMany({ select: { codigoDireccion: true, cliente: true, nombreDireccion: true, direccion: true, comuna: true, provincia: true, lat: true, lon: true, consecutivos: true } }),
     prisma.clienteTat.findMany({
       where: { eliminado: false, consecutivos: { not: null } },
       select: { codigoTercero: true, consecutivos: true },
@@ -754,7 +767,20 @@ async function construirResolverCodigo(): Promise<{
     }),
   ]);
 
-  const index = buildAddressIndex(addresses);
+  // Incluye el maestro GS como direcciones (resuelve clientes de nuestra BD
+  // aunque Drivin no los tenga registrados).
+  const gsAddresses = clientesGS
+    .filter((c) => c.codigoDireccion)
+    .map((c) => ({
+      code: c.codigoDireccion,
+      name: c.nombreDireccion,
+      client: c.cliente,
+      address1: c.direccion,
+      city: c.comuna ?? c.provincia ?? null,
+      lat: c.lat ? parseFloat(c.lat) : null,
+      lng: c.lon ? parseFloat(c.lon) : null,
+    }));
+  const index = buildAddressIndex([...addresses, ...gsAddresses]);
 
   const porNit = new Map<string, string | null>();
   for (const c of clientesTatNit) {

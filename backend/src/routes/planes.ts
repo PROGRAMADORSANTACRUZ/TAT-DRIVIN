@@ -93,9 +93,21 @@ async function buildScenarioPayload(opts: {
     },
   });
 
-  // Direcciones registradas en Drivin, para asignar el código correcto por cliente/destino.
+  // Direcciones registradas en Drivin + el maestro GS (para asignar el código
+  // correcto por cliente/destino, aunque Drivin no tenga registrado al cliente).
   const drivinAddresses = await fetchDrivinAddresses();
-  const drivinIndex = buildAddressIndex(drivinAddresses);
+  const gsAddresses = clientesGS
+    .filter((c) => c.codigoDireccion)
+    .map((c) => ({
+      code: c.codigoDireccion,
+      name: c.nombreDireccion,
+      client: c.cliente,
+      address1: c.direccion,
+      city: c.comuna ?? c.provincia ?? null,
+      lat: c.lat ? parseFloat(c.lat) : null,
+      lng: c.lon ? parseFloat(c.lon) : null,
+    }));
+  const drivinIndex = buildAddressIndex([...drivinAddresses, ...gsAddresses]);
 
   type GeoEntry = {
     direccion: string | null;

@@ -8,6 +8,7 @@ import {
   fetchDrivinAddresses,
   buildAddressIndex,
   matchDrivinAddress,
+  crearClienteDrivin,
 } from "../lib/drivinAddresses";
 
 // Cruza las órdenes pendientes contra Drivin y asigna a cada cliente (por su
@@ -219,7 +220,16 @@ router.post("/", requireAuth, requirePermiso("/configuracion/clientes"), async (
     const cliente = await prisma.cliente.create({
       data: { ...data, consecutivos: JSON.stringify(consecutivos) },
     });
-    res.status(201).json({ ...cliente, consecutivos });
+    // Registra el cliente en Drivin (best-effort) para que exista antes de que
+    // salga la orden. No bloquea la creación local si Drivin falla.
+    const drivin = await crearClienteDrivin({
+      code: cliente.codigoDireccion,
+      name: cliente.cliente ?? cliente.nombreDireccion,
+      contactName: cliente.cliente ?? cliente.nombreDireccion,
+      contactPhone: cliente.telefono,
+      contactEmail: cliente.correo,
+    });
+    res.status(201).json({ ...cliente, consecutivos, drivin });
   } catch (err) {
     next(err);
   }

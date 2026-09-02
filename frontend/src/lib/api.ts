@@ -371,8 +371,10 @@ export function updateCliente(
   });
 }
 
-export function crearCliente(data: ClienteInput): Promise<Cliente> {
-  return request<Cliente>("/api/clientes", {
+export function crearCliente(
+  data: ClienteInput
+): Promise<Cliente & { drivin?: { ok: boolean; error?: string } }> {
+  return request("/api/clientes", {
     method: "POST",
     body: JSON.stringify(data),
   });

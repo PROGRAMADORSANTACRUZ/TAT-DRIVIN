@@ -178,3 +178,55 @@ export function matchDrivinAddress(
 
   return null;
 }
+
+// Datos para crear un cliente en Drivin.
+export interface NuevoClienteDrivin {
+  code: string | null;
+  name: string | null;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  clientType?: string;
+}
+
+// Crea el cliente en Drivin vía POST /v2/clients (payload { clients: [...] }).
+// Best-effort: nunca lanza; devuelve { ok, error? } para informar en la UI.
+export async function crearClienteDrivin(
+  c: NuevoClienteDrivin
+): Promise<{ ok: boolean; error?: string }> {
+  if (!env.DRIVIN_API_KEY) return { ok: false, error: "Sin API key de Drivin" };
+  if (!c.code && !c.name) {
+    return { ok: false, error: "Faltan datos del cliente para crearlo en Drivin" };
+  }
+  try {
+    const resp = await fetch(`${env.DRIVIN_API_URL}/v2/clients`, {
+      method: "POST",
+      headers: {
+        "X-API-Key": env.DRIVIN_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        clients: [
+          {
+            code: c.code,
+            name: c.name ?? c.code,
+            client_type: c.clientType ?? "customer",
+            contact_name: c.contactName ?? c.name ?? "",
+            contact_phone: c.contactPhone ?? "",
+            contact_email: c.contactEmail ?? "",
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      return { ok: false, error: `Drivin ${resp.status}: ${body.slice(0, 200)}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+

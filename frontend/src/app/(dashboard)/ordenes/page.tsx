@@ -985,6 +985,7 @@ export default function OrdenesPage() {
                         const codigo = activeCat.isTat
                           ? g.codigo
                           : (g.sobrescritoConcatenado && g.codigo) ||
+                            codigoPorClave.get(claveCD(g.clienteAsignado ?? g.cliente, g.destino)) ||
                             codigoPorClave.get(claveCD(g.cliente, g.destino));
                         return (
                         <tr
@@ -1266,7 +1267,7 @@ export default function OrdenesPage() {
                     <th className="px-4 py-3 font-semibold">#</th>
                     <th className="px-4 py-3 font-semibold">Cliente</th>
                     <th className="px-4 py-3 font-semibold">Tipo</th>
-                    <th className="px-4 py-3 font-semibold">NIT</th>
+                    <th className="px-4 py-3 font-semibold">NIT / Código</th>
                     <th className="px-4 py-3 font-semibold">Destino</th>
                     <th className="px-4 py-3 font-semibold">Dirección</th>
                     <th className="px-4 py-3 font-semibold">Concatenado</th>
@@ -1303,7 +1304,7 @@ export default function OrdenesPage() {
                           )}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-[#45505e]">
-                          {esTat ? (c.nit || "—") : "—"}
+                          {c.nit || c.codigo || "—"}
                         </td>
                         <td className="px-4 py-3 text-[#45505e]">
                           {esTat ? "—" : (tc(c.destino) || "—")}
@@ -1423,9 +1424,14 @@ export default function OrdenesPage() {
           codigoInicial={codigoAuto}
           consecutivoInicial={`${crearTarget.cliente} - ${crearTarget.destino}`}
           onClose={() => setCrearTarget(null)}
-          onSaved={() => {
+          onSaved={(saved) => {
             setCrearTarget(null);
-            setMessage("Cliente creado. Actualizando verificación…");
+            const d = (saved as { drivin?: { ok: boolean; error?: string } }).drivin;
+            setMessage(
+              "Cliente creado." +
+                (d ? (d.ok ? " Registrado en Drivin." : ` No se pudo crear en Drivin: ${d.error}.`) : "") +
+                " Actualizando verificación…"
+            );
             load();
           }}
         />
