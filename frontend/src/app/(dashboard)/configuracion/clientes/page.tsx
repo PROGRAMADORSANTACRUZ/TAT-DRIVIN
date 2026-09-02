@@ -58,6 +58,12 @@ function fromTat(c: ClienteTat): Row {
   };
 }
 
+// Etiqueta a mostrar: respeta el tipo marcado en el cliente GS (puede ser TAT).
+function badgeTipo(r: Row): "TAT" | "Distribución" {
+  if (r.tipo === "TAT") return "TAT";
+  return r.gs?.tipo === "TAT" ? "TAT" : "Distribución";
+}
+
 const COLUMNS: { key: keyof Row; label: string }[] = [
   { key: "codigo", label: "Código" },
   { key: "nombre", label: "Cliente / Razón social" },
@@ -142,7 +148,11 @@ export default function ClientesPage() {
   ];
   const term = search.trim().toLowerCase();
   const filtered = rows.filter((r) => {
-    if (tipoFiltro && r.tipo !== tipoFiltro) return false;
+    if (tipoFiltro) {
+      const esTat = badgeTipo(r) === "TAT";
+      if (tipoFiltro === "TAT" && !esTat) return false;
+      if (tipoFiltro === "GS" && esTat) return false;
+    }
     if (
       term &&
       ![r.codigo, r.nombre, r.direccion, r.ciudad, r.departamento].some((f) =>
@@ -271,7 +281,7 @@ export default function ClientesPage() {
                     className="cursor-pointer hover:bg-[#f9fbf7]"
                   >
                     <td className="px-3 py-3">
-                      {r.tipo === "TAT" ? (
+                      {badgeTipo(r) === "TAT" ? (
                         <span className="inline-flex rounded-full bg-[#fef3e6] px-2.5 py-0.5 text-xs font-medium text-[#b5731e]">
                           TAT
                         </span>
