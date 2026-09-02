@@ -48,7 +48,7 @@ function fromTat(c: ClienteTat): Row {
   return {
     id: `tat-${c.id}`,
     tipo: "TAT",
-    codigo: c.codigoTercero,
+    codigo: codigoTatConSucursal(c),
     nombre: c.razonSocial,
     direccion: c.direccion1,
     ciudad: c.ciudad,
@@ -56,6 +56,15 @@ function fromTat(c: ClienteTat): Row {
     pais: c.pais,
     tat: c,
   };
+}
+
+// Código a mostrar para TAT: si el cliente tiene sucursal, se concatena como
+// "codigo-sucursal" (misma identidad NIT-sucursal que se envía a Drivin).
+function codigoTatConSucursal(c: ClienteTat): string | null {
+  const base = c.codigoTercero ?? c.nit;
+  if (!base) return null;
+  const suc = parseInt(String(c.sucursal ?? "").trim(), 10);
+  return Number.isFinite(suc) ? `${base}-${suc}` : base;
 }
 
 // Etiqueta a mostrar: respeta el tipo marcado en el cliente GS (puede ser TAT).
