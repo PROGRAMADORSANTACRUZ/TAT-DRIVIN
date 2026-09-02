@@ -256,10 +256,14 @@ async function buildScenarioPayload(opts: {
     const nombreFinal = asignado?.nombre ?? clienteGS;
     const latStr = asignado?.lat ?? geo?.lat ?? null;
     const lngStr = asignado?.lng ?? geo?.lon ?? null;
+    // Código de la dirección/cliente: identifica la dirección en el maestro de
+    // Drivin. Debe ir como `code` (identificador de la dirección) y `client_code`.
+    const codigoFinal = asignado?.codigo ?? codigoTat ?? drivinMatch?.code ?? null;
     clients.push({
+      code: codigoFinal,
       name: titleCase(nombreFinal),
       client_name: titleCase(nombreFinal),
-      client_code: asignado?.codigo ?? codigoTat ?? drivinMatch?.code ?? null,
+      client_code: codigoFinal,
       address: titleCase(asignado?.direccion ?? direccionTat ?? drivinMatch?.address1 ?? geo?.direccion ?? destino),
       city: titleCase(city),
       country: asignado?.pais ?? geo?.pais ?? "Colombia",
