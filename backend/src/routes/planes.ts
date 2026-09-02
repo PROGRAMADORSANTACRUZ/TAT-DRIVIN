@@ -11,6 +11,10 @@ import {
 
 const router = Router();
 
+// Estados que NO se envían a Drivin (ya enviadas o finalizadas). El resto de
+// órdenes asignadas (Pendiente, Parcial, etc.) sí se envían, igual que en asignación.
+const ESTADOS_NO_ENVIABLES = ["Enviado", "Entregado", "Rechazado"];
+
 const DRIVIN_HEADERS = () => ({
   "X-API-Key": env.DRIVIN_API_KEY ?? "",
   "Content-Type": "application/json",
@@ -46,7 +50,7 @@ async function buildScenarioPayload(opts: {
 }) {
   const where: Record<string, unknown> = {
     asignadoVehiculo: { not: null },
-    estado: "Pendiente",
+    estado: { notIn: ESTADOS_NO_ENVIABLES },
   };
   // Si se pasan placas específicas, filtrar solo esas
   if (opts.placas && opts.placas.length > 0) {
@@ -289,7 +293,7 @@ router.post("/", requireAuth, async (req, res, next) => {
     // Marca solo las órdenes enviadas (respetando filtro de placas si aplica)
     const updateWhere: Record<string, unknown> = {
       asignadoVehiculo: { not: null },
-      estado: "Pendiente",
+      estado: { notIn: ESTADOS_NO_ENVIABLES },
     };
     if (placas && placas.length > 0) {
       updateWhere.asignadoVehiculo = { in: placas.map((p) => p.toUpperCase()) };
@@ -421,7 +425,7 @@ router.post("/agregar", requireAuth, async (req, res, next) => {
     await prisma.orden.updateMany({
       where: {
         asignadoVehiculo: { not: null },
-        estado: "Pendiente",
+        estado: { notIn: ESTADOS_NO_ENVIABLES },
       },
       data: { estado: "Enviado" },
     });
