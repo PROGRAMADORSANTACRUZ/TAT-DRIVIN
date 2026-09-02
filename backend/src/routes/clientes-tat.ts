@@ -120,8 +120,23 @@ router.post("/sync", requireAuth, requirePermiso("/configuracion/clientes"), asy
 
     // Índice de los existentes por su clave natural (código tercero o NIT).
     const existentes = await prisma.clienteTat.findMany({
-      select: { codigoTercero: true, nit: true, editado: true, eliminado: true },
+      select: { codigoTercero: true, nit: true, sucursal: true, editado: true, eliminado: true },
     });
+
+    // Clave natural por NIT-sucursal (y código-sucursal): un mismo NIT con
+    // distinta sucursal es un cliente distinto, así no se pisan entre sí.
+    const clavesDe = (
+      codigoTercero: string | null,
+      nit: string | null,
+      sucursal: string | null
+    ): string[] => {
+      const suc = parseInt(String(sucursal ?? "").trim(), 10);
+      const sufijo = Number.isFinite(suc) ? `-${suc}` : "";
+      const keys: string[] = [];
+      if (codigoTercero) keys.push("c:" + codigoTercero + sufijo);
+      if (nit) keys.push("n:" + nit + sufijo);
+      return keys;
+    };
 
     // Claves de clientes editados manualmente (se conservan tal cual).
     const editadoKeys = new Set<string>();
@@ -131,24 +146,21 @@ router.post("/sync", requireAuth, requirePermiso("/configuracion/clientes"), asy
     const noEditadoKeys = new Set<string>();
     let preservados = 0;
     for (const e of existentes) {
+      const keys = clavesDe(e.codigoTercero, e.nit, e.sucursal);
       if (e.eliminado) {
-        if (e.codigoTercero) eliminadoKeys.add("c:" + e.codigoTercero);
-        if (e.nit) eliminadoKeys.add("n:" + e.nit);
+        for (const k of keys) eliminadoKeys.add(k);
         continue;
       }
       if (e.editado) {
         preservados++;
-        if (e.codigoTercero) editadoKeys.add("c:" + e.codigoTercero);
-        if (e.nit) editadoKeys.add("n:" + e.nit);
+        for (const k of keys) editadoKeys.add(k);
       } else {
-        if (e.codigoTercero) noEditadoKeys.add("c:" + e.codigoTercero);
-        if (e.nit) noEditadoKeys.add("n:" + e.nit);
+        for (const k of keys) noEditadoKeys.add(k);
       }
     }
 
     const enSet = (row: (typeof data)[number], set: Set<string>) =>
-      (row.codigoTercero && set.has("c:" + row.codigoTercero)) ||
-      (row.nit && set.has("n:" + row.nit));
+      clavesDe(row.codigoTercero, row.nit, row.sucursal).some((k) => set.has(k));
 
     // Excluye los editados (se conservan) y los eliminados (no reaparecen).
     const nuevos = data.filter(
