@@ -120,7 +120,14 @@ router.post("/sync", requireAuth, requirePermiso("/configuracion/clientes"), asy
 
     // Índice de los existentes por su clave natural (código tercero o NIT).
     const existentes = await prisma.clienteTat.findMany({
-      select: { codigoTercero: true, nit: true, sucursal: true, editado: true, eliminado: true },
+      select: {
+        codigoTercero: true,
+        nit: true,
+        sucursal: true,
+        direccion1: true,
+        editado: true,
+        eliminado: true,
+      },
     });
 
     // Clave natural por NIT-sucursal (y código-sucursal): un mismo NIT con
@@ -144,9 +151,15 @@ router.post("/sync", requireAuth, requirePermiso("/configuracion/clientes"), asy
     const eliminadoKeys = new Set<string>();
     // Claves de los no editados vivos (para contar cuántos se actualizan).
     const noEditadoKeys = new Set<string>();
+    // Dirección ya guardada en nuestra DB por clave (para no perderla si la API
+    // manda una vacía/mala).
+    const dirPreviaPorClave = new Map<string, string>();
     let preservados = 0;
     for (const e of existentes) {
       const keys = clavesDe(e.codigoTercero, e.nit, e.sucursal);
+      if (e.direccion1) {
+        for (const k of keys) if (!dirPreviaPorClave.has(k)) dirPreviaPorClave.set(k, e.direccion1);
+      }
       if (e.eliminado) {
         for (const k of keys) eliminadoKeys.add(k);
         continue;
@@ -162,10 +175,19 @@ router.post("/sync", requireAuth, requirePermiso("/configuracion/clientes"), asy
     const enSet = (row: (typeof data)[number], set: Set<string>) =>
       clavesDe(row.codigoTercero, row.nit, row.sucursal).some((k) => set.has(k));
 
+    const dirPreviaDe = (row: (typeof data)[number]) => {
+      for (const k of clavesDe(row.codigoTercero, row.nit, row.sucursal)) {
+        const d = dirPreviaPorClave.get(k);
+        if (d) return d;
+      }
+      return null;
+    };
+
     // Excluye los editados (se conservan) y los eliminados (no reaparecen).
-    const nuevos = data.filter(
-      (row) => !enSet(row, editadoKeys) && !enSet(row, eliminadoKeys)
-    );
+    // Si la API trae la dirección vacía y ya teníamos una buena, la conservamos.
+    const nuevos = data
+      .filter((row) => !enSet(row, editadoKeys) && !enSet(row, eliminadoKeys))
+      .map((row) => (row.direccion1 ? row : { ...row, direccion1: dirPreviaDe(row) }));
 
     let actualizados = 0;
     for (const row of nuevos) {
