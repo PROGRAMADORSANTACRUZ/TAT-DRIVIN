@@ -11,6 +11,47 @@ import { dlLabel } from "@/lib/utils";
 const fmtKg = (n: number) =>
   n.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// Modal para elegir qué documento imprimir (igual que en Planificación D.L).
+function ImprimirModal({ planilla, onClose }: { planilla: Planilla; onClose: () => void }) {
+  function handleImprimir(doc: () => void) {
+    doc();
+    onClose();
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center gap-2">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#e8f3e2] text-[#2f8f4e]">
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
+            </svg>
+          </span>
+          <div>
+            <h3 className="text-base font-semibold text-[#14352a]">Imprimir documentos</h3>
+            <p className="text-xs text-[#7a8794]">Plantilla {dlLabel(planilla.consecutivo)} · {planilla.placa}</p>
+          </div>
+        </div>
+        <p className="mb-4 text-sm text-[#5f7a68]">¿Qué deseas imprimir?</p>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => handleImprimir(() => imprimirDocumento(docRI(planilla)))} className="rounded-lg border border-[#dfe4e0] bg-white px-4 py-2.5 text-sm font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]">
+            Imprimir R.I
+          </button>
+          <button onClick={() => handleImprimir(() => imprimirDocumento(docRIT(planilla)))} className="rounded-lg border border-[#dfe4e0] bg-white px-4 py-2.5 text-sm font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]">
+            Imprimir R.I.T
+          </button>
+        </div>
+        <button
+          onClick={() => handleImprimir(() => { imprimirDocumento(docRI(planilla)); setTimeout(() => imprimirDocumento(docRIT(planilla)), 700); })}
+          className="mt-2 w-full rounded-lg bg-[#2f8f4e] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#277a42]"
+        >
+          Imprimir ambos
+        </button>
+        <button onClick={onClose} className="mt-2 w-full rounded-lg px-4 py-2 text-sm font-medium text-[#7a8794] transition-colors hover:bg-[#f4f6f3]">Cerrar</button>
+      </div>
+    </div>
+  );
+}
+
 export default function HistoricosPage() {
   const [planillas, setPlanillas] = useState<Planilla[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,6 +60,7 @@ export default function HistoricosPage() {
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
   const [pagina, setPagina] = useState(1);
+  const [imprimir, setImprimir] = useState<Planilla | null>(null);
   const POR_PAGINA = 20;
 
   const load = useCallback(async () => {
@@ -122,26 +164,26 @@ export default function HistoricosPage() {
         ) : filtrado.length === 0 ? (
           <p className="p-8 text-center text-sm text-[#5f7a68]">No hay plantillas para el filtro.</p>
         ) : (
-          <div className="nice-scroll overflow-auto">
-            <table className="w-full table-auto text-left text-sm">
+          <div className="overflow-hidden">
+            <table className="w-full table-fixed text-left text-sm">
               <thead className="border-b border-[#eceef0] bg-[#f7faf5] text-xs uppercase tracking-wide text-[#7a8794]">
                 <tr>
-                  <th className="px-4 py-3 font-semibold">#</th>
-                  <th className="px-4 py-3 font-semibold">Fecha</th>
-                  <th className="px-4 py-3 font-semibold">Placa</th>
-                  <th className="px-4 py-3 font-semibold">Conductor</th>
-                  <th className="px-4 py-3 font-semibold">Auxiliar</th>
-                  <th className="px-4 py-3 font-semibold">Ruta</th>
-                  <th className="px-4 py-3 font-semibold">Tipo</th>
-                  <th className="px-4 py-3 text-right font-semibold">Docs</th>
-                  <th className="px-4 py-3 text-right font-semibold">Kilos</th>
-                  <th className="px-4 py-3 text-center font-semibold">Imprimir</th>
+                  <th className="w-[9%] px-3 py-3 font-semibold">#</th>
+                  <th className="w-[9%] px-3 py-3 font-semibold">Fecha</th>
+                  <th className="w-[8%] px-3 py-3 font-semibold">Placa</th>
+                  <th className="px-3 py-3 font-semibold">Conductor</th>
+                  <th className="px-3 py-3 font-semibold">Auxiliar</th>
+                  <th className="px-3 py-3 font-semibold">Ruta</th>
+                  <th className="w-[10%] px-3 py-3 font-semibold">Tipo</th>
+                  <th className="w-[7%] px-3 py-3 text-right font-semibold">Docs</th>
+                  <th className="w-[10%] px-3 py-3 text-right font-semibold">Kilos</th>
+                  <th className="w-[11%] px-3 py-3 text-center font-semibold">Imprimir</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#f0f2ee]">
                 {paginado.map((p) => (
                   <tr key={p.id} className={`hover:bg-[#f9fbf7] ${p.anulada ? "opacity-50" : ""}`}>
-                    <td className="px-4 py-3 font-semibold text-[#14352a]">
+                    <td className="px-3 py-3 font-semibold text-[#14352a]">
                       {dlLabel(p.consecutivo)}
                       {p.anulada && <span className="ml-1.5 rounded bg-[#fbeceb] px-1.5 py-0.5 text-[10px] font-bold text-[#b3261e]">ANULADA</span>}
                       {p.anulada && p.reemplazadaPorConsecutivo && (
@@ -151,18 +193,20 @@ export default function HistoricosPage() {
                         <div className="text-[10px] text-[#2f8f4e]">En reemplazo de {dlLabel(p.reemplazaDeConsecutivo)}</div>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-[#45505e]">{p.fecha || new Date(p.createdAt).toLocaleDateString("es-CO")}</td>
-                    <td className="px-4 py-3"><span className="rounded bg-yellow-300 px-2 py-0.5 text-xs font-bold tracking-wider text-[#14352a] ring-1 ring-yellow-400">{p.placa}</span></td>
-                    <td className="px-4 py-3 text-[#45505e]">{p.conductor || "—"}</td>
-                    <td className="px-4 py-3 text-[#45505e]">{p.auxiliarRuta || "—"}</td>
-                    <td className="px-4 py-3 text-[#45505e]">{p.ruta || "—"}</td>
-                    <td className="px-4 py-3 text-[#45505e]">{p.tipoDespacho || "—"}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-[#45505e]">{p.docs}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-[#14352a]">{fmtKg(p.kilos)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button onClick={() => imprimirDocumento(docRI(p))}  className="inline-flex items-center gap-1 rounded-lg border border-[#dfe4e0] bg-white px-2.5 py-1.5 text-xs font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]">R.I</button>
-                        <button onClick={() => imprimirDocumento(docRIT(p))} className="inline-flex items-center gap-1 rounded-lg border border-[#dfe4e0] bg-white px-2.5 py-1.5 text-xs font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]">R.I.T</button>
+                    <td className="whitespace-nowrap px-3 py-3 text-[#45505e]">{p.fecha || new Date(p.createdAt).toLocaleDateString("es-CO")}</td>
+                    <td className="px-3 py-3"><span className="rounded bg-yellow-300 px-2 py-0.5 text-xs font-bold tracking-wider text-[#14352a] ring-1 ring-yellow-400">{p.placa}</span></td>
+                    <td className="px-3 py-3 text-[#45505e]">{p.conductor || "—"}</td>
+                    <td className="px-3 py-3 text-[#45505e]">{p.auxiliarRuta || "—"}</td>
+                    <td className="px-3 py-3 text-[#45505e]">{p.ruta || "—"}</td>
+                    <td className="px-3 py-3 text-[#45505e]">{p.tipoDespacho || "—"}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-[#45505e]">{p.docs}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-[#14352a]">{fmtKg(p.kilos)}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center justify-center">
+                        <button onClick={() => setImprimir(p)} className="inline-flex items-center gap-1.5 rounded-lg border border-[#dfe4e0] bg-white px-3 py-1.5 text-xs font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]">
+                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                          Imprimir
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -235,6 +279,8 @@ export default function HistoricosPage() {
           </div>
         )}
       </div>
+
+      {imprimir && <ImprimirModal planilla={imprimir} onClose={() => setImprimir(null)} />}
     </div>
   );
 }
