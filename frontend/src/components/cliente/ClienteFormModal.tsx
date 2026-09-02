@@ -317,11 +317,12 @@ export default function ClienteFormModal({
                     value={nuevoConcat}
                     onChange={(e) => setNuevoConcat(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); agregarConcat(); } }}
-                    placeholder="CLIENTE - DESTINO"
+                    placeholder="CLIENTE - DESTINO  o  NIT-sucursal (ej. 900554896-2)"
                     className={`${INPUT_CLS} min-w-0 flex-1`}
                   />
                   <button type="button" onClick={agregarConcat} className="shrink-0 rounded-lg bg-[#2f8f4e] px-3 py-2 text-sm font-medium text-white hover:bg-[#277a42]">Agregar</button>
                 </div>
+                <p className="mt-1 text-[11px] text-[#7a8794]">Agrega un NIT-sucursal (ej. 900554896-2) para que ese cliente TAT se despache con este cliente.</p>
                 {concatenados.length > 0 ? (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {concatenados.map((c, i) => (

@@ -364,7 +364,7 @@ router.get("/", requireAuth, async (req, res, next) => {
     // ?all=true devuelve todas; por defecto solo activas (excluye Entregado/Rechazado)
     // para reducir payload en el cliente (el sistema solo necesita las activas)
     const todas = req.query.all === "true";
-    const [ordenes, clientesGS, clientesTat] = await Promise.all([
+    const [ordenes, clientesGS, clientesTat, tatConConsec] = await Promise.all([
       prisma.orden.findMany({
         where: todas ? undefined : { estado: { notIn: ["Entregado", "Rechazado"] } },
         orderBy: [{ cliente: "asc" }, { destino: "asc" }, { numeroOrden: "asc" }],
@@ -376,22 +376,39 @@ router.get("/", requireAuth, async (req, res, next) => {
         where: { eliminado: false, editado: true, nit: { not: null } },
         select: { nit: true, sucursal: true, direccion1: true, razonSocial: true },
       }),
+      prisma.clienteTat.findMany({
+        where: { eliminado: false, consecutivos: { not: null } },
+        select: { codigoTercero: true, razonSocial: true, direccion1: true, consecutivos: true },
+      }),
     ]);
 
     // Datos actuales del maestro GS por consecutivo y por código (fuente de verdad editable).
-    type MaestroInfo = { nombre?: string; direccion?: string };
+    type MaestroInfo = { nombre?: string; direccion?: string; codigo?: string };
     const gsPorConsecutivo = new Map<string, MaestroInfo>();
     const gsPorCodigo = new Map<string, MaestroInfo>();
+    // Ruteo explícito: NIT-sucursal agregado como concatenado en OTRO cliente destino.
+    const porNitConcat = new Map<string, MaestroInfo>();
+    const indexarConcatNit = (consecutivos: string | null, info: MaestroInfo) => {
+      if (!consecutivos) return;
+      try {
+        for (const con of JSON.parse(consecutivos) as string[]) {
+          const k = claveCliente(con);
+          if (esConcatNit(k) && !porNitConcat.has(k)) porNitConcat.set(k, info);
+        }
+      } catch { /* consecutivos inválidos */ }
+    };
     for (const c of clientesGS) {
       const dir = (c.direccion ?? "").trim();
       const nombre = (c.cliente ?? "").trim();
       const info: MaestroInfo = {};
       if (dir) info.direccion = dir;
       if (nombre) info.nombre = nombre;
+      if (c.codigoDireccion) info.codigo = c.codigoDireccion.trim();
       if (!info.direccion && !info.nombre) continue;
       if (c.codigoDireccion && !gsPorCodigo.has(c.codigoDireccion.trim())) {
         gsPorCodigo.set(c.codigoDireccion.trim(), info);
       }
+      indexarConcatNit(c.consecutivos, info);
       if (c.consecutivos) {
         try {
           for (const con of JSON.parse(c.consecutivos) as string[]) {
@@ -400,6 +417,15 @@ router.get("/", requireAuth, async (req, res, next) => {
           }
         } catch { /* consecutivos inválidos */ }
       }
+    }
+    for (const c of tatConConsec) {
+      const info: MaestroInfo = {};
+      const dir = (c.direccion1 ?? "").trim();
+      const nombre = (c.razonSocial ?? "").trim();
+      if (dir.length >= 2 && !NO_DIRECCION_TAT.has(dir.toUpperCase())) info.direccion = dir;
+      if (nombre) info.nombre = nombre;
+      if (c.codigoTercero) info.codigo = c.codigoTercero.trim();
+      indexarConcatNit(c.consecutivos, info);
     }
     // Datos del maestro TAT (solo clientes editados) por NIT-sucursal.
     const tatPorClave = new Map<string, MaestroInfo>();
@@ -419,6 +445,16 @@ router.get("/", requireAuth, async (req, res, next) => {
 
     // Sobrescribe cliente y dirección de cada orden con los del maestro (tiempo real).
     const enriquecidas = ordenes.map((o) => {
+      // Ruteo explícito por NIT-concatenado: la orden se va con el cliente destino.
+      const rut = o.nit ? porNitConcat.get(claveCliente(o.nit)) : undefined;
+      if (rut) {
+        return {
+          ...o,
+          ...(rut.direccion ? { direccion: rut.direccion } : {}),
+          ...(rut.nombre ? { cliente: rut.nombre } : {}),
+          ...(rut.codigo ? { codigo: rut.codigo } : {}),
+        };
+      }
       let info: MaestroInfo | undefined;
       if (o.distribucion === "TAT") {
         info =
@@ -507,6 +543,12 @@ function claveCliente(s: unknown): string {
     .trim();
 }
 
+// Un concatenado que es un NIT (o NIT-sucursal): sirve para enrutar órdenes TAT
+// a un cliente diferente (se agregan como concatenado en el cliente destino).
+function esConcatNit(k: string): boolean {
+  return /^\d{5,}(?:-\d+)?$/.test(k);
+}
+
 // GET /api/ordenes/verificar-clientes
 // Cruza los clientes/destinos de las órdenes pendientes contra: (1) los
 // consecutivos asignados manualmente a un cliente en nuestra BD y (2) las
@@ -521,13 +563,13 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
       }),
       fetchDrivinAddresses(),
       prisma.cliente.findMany({
-        select: { codigoDireccion: true, consecutivos: true },
+        select: { codigoDireccion: true, cliente: true, consecutivos: true },
       }),
     ]);
     // Clientes TAT con concatenados (código = codigoTercero).
     const clientesTat = await prisma.clienteTat.findMany({
       where: { eliminado: false, consecutivos: { not: null } },
-      select: { codigoTercero: true, consecutivos: true },
+      select: { codigoTercero: true, razonSocial: true, consecutivos: true },
     });
     // Clientes TAT indexados por NIT + sucursal: cada sucursal es un cliente distinto.
     const clientesTatNit = await prisma.clienteTat.findMany({
@@ -549,6 +591,8 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
 
     // Mapa de consecutivo (normalizado) -> código del cliente en nuestra BD.
     const porConsecutivo = new Map<string, string | null>();
+    // Ruteo explícito: NIT-sucursal como concatenado en OTRO cliente destino.
+    const porNitConcat = new Map<string, { code: string | null; nombre: string | null }>();
     for (const c of clientesGS) {
       if (!c.consecutivos) continue;
       let lista: string[] = [];
@@ -559,7 +603,12 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
       }
       for (const con of lista) {
         const k = claveCliente(con);
-        if (k && !porConsecutivo.has(k)) porConsecutivo.set(k, c.codigoDireccion);
+        if (!k) continue;
+        if (esConcatNit(k)) {
+          if (!porNitConcat.has(k)) porNitConcat.set(k, { code: c.codigoDireccion, nombre: c.cliente });
+        } else if (!porConsecutivo.has(k)) {
+          porConsecutivo.set(k, c.codigoDireccion);
+        }
       }
     }
     for (const c of clientesTat) {
@@ -572,7 +621,12 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
       }
       for (const con of lista) {
         const k = claveCliente(con);
-        if (k && !porConsecutivo.has(k)) porConsecutivo.set(k, c.codigoTercero);
+        if (!k) continue;
+        if (esConcatNit(k)) {
+          if (!porNitConcat.has(k)) porNitConcat.set(k, { code: c.codigoTercero, nombre: c.razonSocial });
+        } else if (!porConsecutivo.has(k)) {
+          porConsecutivo.set(k, c.codigoTercero);
+        }
       }
     }
 
@@ -615,6 +669,8 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
     for (const g of grupos.values()) {
       // El consecutivo de la orden es "cliente - destino".
       const consecutivo = claveCliente(`${g.cliente} - ${g.destino}`);
+      // Ruteo explícito por NIT-concatenado (manda sobre el registro propio del TAT).
+      const rut = g.nit ? porNitConcat.get(claveCliente(g.nit)) : undefined;
       // Los TAT se identifican por NIT-sucursal (g.codigo); los demás por consecutivo o dirección.
       const claveTat = g.codigo ?? g.nit ?? "";
       const codigoNit = claveTat ? porNit.get(claveTat) : undefined;
@@ -623,14 +679,16 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
         porConsecutivo.get(consecutivo) ??
         porConsecutivo.get(claveCliente(g.destino));
       const match =
-        codigoNit !== undefined
+        rut
+          ? { code: rut.code }
+          : codigoNit !== undefined
           ? { code: codigoNit }
           : codigoManual
           ? { code: codigoManual }
           : matchDrivinAddress(index, g.cliente, g.destino);
       if (match) {
         registrados.push({
-          cliente: g.cliente,
+          cliente: rut?.nombre ?? g.cliente,
           destino: g.destino,
           codigo: match.code ?? null,
           pedidos: g.pedidos.size,
