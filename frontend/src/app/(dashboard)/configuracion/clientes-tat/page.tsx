@@ -72,9 +72,10 @@ export default function ClientesTatPage() {
     setError(null);
     setMessage(null);
     try {
-      const { creados, actualizados, preservados } = await syncClientesTat();
+      const { creados, actualizados, preservados, duplicados } = await syncClientesTat();
       setMessage(
-        `Sincronización lista: ${creados} nuevos, ${actualizados} actualizados, ${preservados} conservados (editados manualmente).`
+        `Sincronización lista: ${creados} nuevos, ${actualizados} actualizados, ${preservados} conservados (editados manualmente).` +
+          (duplicados ? ` Se descartaron ${duplicados} duplicados por NIT/sucursal.` : "")
       );
       await load();
     } catch (err) {

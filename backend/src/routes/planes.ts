@@ -123,6 +123,14 @@ async function buildScenarioPayload(opts: {
       matchDrivinAddress(drivinIndex, clienteGS, destino) ??
       matchDrivinAddress(drivinIndex, cliente, destino);
 
+    // TAT con sucursal: el código guardado es NIT-sucursal (identidad única por
+    // sucursal). Se envía tal cual a Drivin —junto con su dirección real— para
+    // que cada sucursal sea un cliente distinto y no se colapsen por el NIT.
+    const primeraLinea = pedidos.values().next().value?.[0] as Linea | undefined;
+    const esTat = primeraLinea?.distribucion === "TAT";
+    const codigoTat = esTat ? primeraLinea?.codigo ?? null : null;
+    const direccionTat = esTat ? primeraLinea?.direccion ?? null : null;
+
     // Busca geo en Clientes GS: exacto → por destino → por nombre alias → por nombre original.
     const geo =
       geoMap.get(`${normKey(clienteGS)}||${normKey(destino)}`) ??
@@ -156,8 +164,8 @@ async function buildScenarioPayload(opts: {
     clients.push({
       name: titleCase(clienteGS),
       client_name: titleCase(clienteGS),
-      client_code: drivinMatch?.code ?? null,
-      address: titleCase(drivinMatch?.address1 ?? geo?.direccion ?? destino),
+      client_code: codigoTat ?? drivinMatch?.code ?? null,
+      address: titleCase(direccionTat ?? drivinMatch?.address1 ?? geo?.direccion ?? destino),
       city: titleCase(city),
       country: geo?.pais ?? "Colombia",
       lat: geo?.lat ? parseFloat(geo.lat) : null,

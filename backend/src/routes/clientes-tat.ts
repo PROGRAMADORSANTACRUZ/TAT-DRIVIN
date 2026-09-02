@@ -185,9 +185,21 @@ router.post("/sync", requireAuth, requirePermiso("/configuracion/clientes"), asy
 
     // Excluye los editados (se conservan) y los eliminados (no reaparecen).
     // Si la API trae la dirección vacía y ya teníamos una buena, la conservamos.
-    const nuevos = data
+    const filtrados = data
       .filter((row) => !enSet(row, editadoKeys) && !enSet(row, eliminadoKeys))
       .map((row) => (row.direccion1 ? row : { ...row, direccion1: dirPreviaDe(row) }));
+
+    // Verifica por NIT (clave natural NIT-sucursal / código-sucursal): un mismo
+    // cliente solo entra una vez; si la API lo repite, se conserva el primero.
+    const vistos = new Set<string>();
+    const nuevos = filtrados.filter((row) => {
+      const keys = clavesDe(row.codigoTercero, row.nit, row.sucursal);
+      if (keys.length === 0) return true;
+      if (keys.some((k) => vistos.has(k))) return false;
+      for (const k of keys) vistos.add(k);
+      return true;
+    });
+    const duplicados = filtrados.length - nuevos.length;
 
     let actualizados = 0;
     for (const row of nuevos) {
@@ -207,6 +219,7 @@ router.post("/sync", requireAuth, requirePermiso("/configuracion/clientes"), asy
       creados,
       actualizados,
       preservados,
+      duplicados,
     });
   } catch (err) {
     next(err);

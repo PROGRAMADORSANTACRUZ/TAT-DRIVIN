@@ -463,6 +463,7 @@ export function syncClientesTat(): Promise<{
   creados: number;
   actualizados: number;
   preservados: number;
+  duplicados: number;
 }> {
   return request("/api/clientes-tat/sync", { method: "POST" });
 }

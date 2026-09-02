@@ -130,9 +130,10 @@ export default function ClientesPage() {
     setError(null);
     setMessage(null);
     try {
-      const { creados, actualizados, preservados } = await syncClientesTat();
+      const { creados, actualizados, preservados, duplicados } = await syncClientesTat();
       setMessage(
-        `TAT: ${creados} nuevos, ${actualizados} actualizados, ${preservados} conservados.`
+        `TAT: ${creados} nuevos, ${actualizados} actualizados, ${preservados} conservados.` +
+          (duplicados ? ` ${duplicados} duplicados por NIT/sucursal descartados.` : "")
       );
       await load();
     } catch (err) {
