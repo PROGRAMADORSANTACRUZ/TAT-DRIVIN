@@ -825,24 +825,21 @@ router.post(
 
       const ordenes = (tipo === "I" ? parseOrdenesInversiones(req.file.buffer) : parseOrdenes(req.file.buffer));
       const conNumero = ordenes.filter((o) => o.numeroOrden.trim());
-      // Solo se suben órdenes cuyo cliente queda registrado (con código en Drivin/DB);
-      // las que saldrían "Sin código" no se guardan. Si Drivin no responde, no se filtra.
+      // Se suben TODAS las órdenes del archivo. Las que no resuelven un código en
+      // Drivin/DB quedan visibles como "Sin código" para registrarlas o asignarles
+      // su consecutivo desde el panel de clientes (no se descartan al importar).
       const { resolver, driviOk } = await construirResolverCodigo();
-      let validas = conNumero;
       let sinCodigo = 0;
       if (driviOk) {
-        const keep: typeof conNumero = [];
         const omitidas = new Set<string>();
         for (const o of conNumero) {
-          if (resolver(o.cliente, o.destino, o.nit ?? null, null)) keep.push(o);
-          else omitidas.add(o.numeroOrden);
+          if (!resolver(o.cliente, o.destino, o.nit ?? null, null)) omitidas.add(o.numeroOrden);
         }
-        validas = keep;
         sinCodigo = omitidas.size;
       }
-      const ordenesConCodigo = validas.map((o) => ({ ...o, numeroOrden: tipo + o.numeroOrden }));
+      const ordenesConCodigo = conNumero.map((o) => ({ ...o, numeroOrden: tipo + o.numeroOrden }));
       if (ordenesConCodigo.length === 0) {
-        throw new HttpError(400, "Ninguna orden del archivo tiene cliente registrado (con código)");
+        throw new HttpError(400, "El archivo no contiene órdenes válidas");
       }
 
       // Cruza con los PODs de Drivin para marcar las entregadas.

@@ -39,6 +39,7 @@ type OrdenGrupo = {
   numeroOrden: string;
   fecha: string;
   cliente: string;
+  clienteAsignado: string | null;
   destino: string;
   distribucion: string;
   tatOrigen: string | null;
@@ -65,6 +66,7 @@ function agrupar(ordenes: Orden[]): OrdenGrupo[] {
         numeroOrden: o.numeroOrden,
         fecha: o.fecha,
         cliente: o.cliente,
+        clienteAsignado: o.clienteAsignado ?? null,
         destino: o.destino,
         distribucion: o.distribucion,
         tatOrigen: o.tatOrigen,
@@ -87,6 +89,7 @@ function agrupar(ordenes: Orden[]): OrdenGrupo[] {
     g.items += 1;
     if (o.producto) g.productos.push(o.producto);
     if (!g.direccion && o.direccion) g.direccion = o.direccion;
+    if (!g.clienteAsignado && o.clienteAsignado) g.clienteAsignado = o.clienteAsignado;
     if (o.asignadoVehiculo) g.asignado = o.asignadoVehiculo;
     if (o.estado === "Enviado") g.enviado = true;
   }
@@ -664,7 +667,7 @@ export default function AsignacionVehiculosPage() {
                             <span className="inline-flex rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">Distribución</span>
                           )}
                         </td>
-                        <td className="px-4 py-2 text-[#45505e]">{tc(g.cliente) || "—"}</td>
+                        <td className="px-4 py-2 text-[#45505e]">{tc(g.clienteAsignado ?? g.cliente) || "—"}</td>
                         <td className="whitespace-nowrap px-4 py-2 text-[#45505e]">{esTat ? (g.nit || "—") : "—"}</td>
                         <td className="px-4 py-2 text-[#45505e]">{dir ? tc(dir) : (esTat ? "—" : tc(g.destino))}</td>
                         <td className="px-4 py-2 text-right tabular-nums text-[#14352a]">{g.totalKg.toFixed(2)}</td>
@@ -1165,7 +1168,7 @@ export default function AsignacionVehiculosPage() {
                           <span className="inline-flex rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">Distribución</span>
                         )}
                       </td>
-                      <td className="truncate px-3 py-2 text-[#45505e]" title={tc(g.cliente)}>{tc(g.cliente) || "—"}</td>
+                      <td className="truncate px-3 py-2 text-[#45505e]" title={tc(g.clienteAsignado ?? g.cliente)}>{tc(g.clienteAsignado ?? g.cliente) || "—"}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-[#45505e]">{esTat ? (g.nit || "—") : "—"}</td>
                       <td className="truncate px-3 py-2 text-[#45505e]" title={dir ? tc(dir) : tc(g.destino)}>{dir ? tc(dir) : (esTat ? "—" : tc(g.destino))}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-[#14352a]">{g.totalKg.toFixed(2)}</td>

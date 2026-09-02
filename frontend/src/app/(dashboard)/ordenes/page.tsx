@@ -342,7 +342,7 @@ export default function OrdenesPage() {
         await importOrdenes(file, tipo);
       setMessage(
         `Se importaron ${importados}: ${entregados} entregadas, ${rechazados} rechazadas, ${pendientes} pendientes.` +
-          (sinCodigo ? ` Se omitieron ${sinCodigo} ${sinCodigo === 1 ? "orden" : "órdenes"} sin código.` : "")
+          (sinCodigo ? ` ${sinCodigo} ${sinCodigo === 1 ? "orden quedó" : "órdenes quedaron"} sin código (regístralas en la verificación de clientes).` : "")
       );
       await load();
     } catch (err) {

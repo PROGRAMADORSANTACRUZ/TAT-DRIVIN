@@ -40,6 +40,27 @@ const CLIENTES_ALIAS: Record<string, string> = {
   "MEGATIENDA SANTA CRUZ": "Megatienda Altos De Santacruz",
 };
 
+// Clave normalizada para cruzar consecutivos/concatenados (igual que en ordenes).
+function claveCliente(s: unknown): string {
+  return String(s ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Un concatenado que es un NIT (o NIT-sucursal) enruta la orden a otro cliente.
+function esConcatNit(k: string): boolean {
+  return /^\d{5,}(?:-\d+)?$/.test(k);
+}
+
+// Identidad de cliente TAT por sucursal: NIT-<entero>.
+function claveNitSucursal(nit: string, sucursal: string | null): string {
+  const suc = parseInt(String(sucursal ?? "").trim(), 10);
+  return Number.isFinite(suc) ? `${nit}-${suc}` : nit;
+}
+
 // Construye el payload del escenario a partir de las órdenes asignadas en BD.
 async function buildScenarioPayload(opts: {
   descripcion: string;
@@ -63,6 +84,14 @@ async function buildScenarioPayload(opts: {
   }
 
   const clientesGS = await prisma.cliente.findMany();
+  const clientesTat = await prisma.clienteTat.findMany({
+    where: { eliminado: false },
+    select: {
+      codigoTercero: true, nit: true, sucursal: true, razonSocial: true,
+      direccion1: true, ciudad: true, departamento: true, pais: true,
+      lat: true, lon: true, consecutivos: true,
+    },
+  });
 
   // Direcciones registradas en Drivin, para asignar el código correcto por cliente/destino.
   const drivinAddresses = await fetchDrivinAddresses();
@@ -94,6 +123,48 @@ async function buildScenarioPayload(opts: {
     // Fallback por nombre de cliente cuando el destino no coincide con nombreDireccion.
     if (c.cliente && !geoByCliente.has(normKey(c.cliente)))
       geoByCliente.set(normKey(c.cliente), entry);
+  }
+
+  // Ruteo por concatenado: NIT (TAT) o "cliente - destino"/"destino" (GS) agregado
+  // en OTRO cliente de la BD. Ese cliente destino aporta código/nombre/dirección/geo.
+  type ClienteInfo = {
+    nombre?: string; direccion?: string; codigo?: string;
+    ciudad?: string | null; pais?: string | null; lat?: string | null; lng?: string | null;
+  };
+  const porNitConcat = new Map<string, ClienteInfo>();
+  const porConsecutivo = new Map<string, ClienteInfo>();
+  const indexarConcat = (consecutivos: string | null, info: ClienteInfo) => {
+    if (!consecutivos) return;
+    let lista: string[] = [];
+    try { lista = JSON.parse(consecutivos) as string[]; } catch { return; }
+    for (const con of lista) {
+      const k = claveCliente(con);
+      if (!k) continue;
+      if (esConcatNit(k)) { if (!porNitConcat.has(k)) porNitConcat.set(k, info); }
+      else if (!porConsecutivo.has(k)) porConsecutivo.set(k, info);
+    }
+  };
+  for (const c of clientesGS) {
+    indexarConcat(c.consecutivos, {
+      nombre: c.cliente ?? undefined,
+      direccion: c.direccion ?? undefined,
+      codigo: c.codigoDireccion ?? undefined,
+      ciudad: c.provincia ?? c.region ?? null,
+      pais: c.pais,
+      lat: c.lat,
+      lng: c.lon,
+    });
+  }
+  for (const c of clientesTat) {
+    indexarConcat(c.consecutivos, {
+      nombre: c.razonSocial ?? undefined,
+      direccion: c.direccion1 ?? undefined,
+      codigo: c.nit ? claveNitSucursal(c.nit, c.sucursal) : (c.codigoTercero ?? undefined),
+      ciudad: c.ciudad ?? c.departamento ?? null,
+      pais: c.pais,
+      lat: c.lat,
+      lng: c.lon,
+    });
   }
 
   type Linea = (typeof ordenes)[0];
@@ -131,6 +202,14 @@ async function buildScenarioPayload(opts: {
     const codigoTat = esTat ? primeraLinea?.codigo ?? null : null;
     const direccionTat = esTat ? primeraLinea?.direccion ?? null : null;
 
+    // Ruteo por concatenado: primero el cliente al que se concatenó este (por NIT
+    // en TAT, o por "cliente - destino"/"destino" en GS); si no hay, el propio.
+    const nitLinea = primeraLinea?.nit ?? null;
+    const asignado =
+      (nitLinea ? porNitConcat.get(claveCliente(nitLinea)) : undefined) ??
+      porConsecutivo.get(claveCliente(`${cliente} - ${destino}`)) ??
+      porConsecutivo.get(claveCliente(destino));
+
     // Busca geo en Clientes GS: exacto → por destino → por nombre alias → por nombre original.
     const geo =
       geoMap.get(`${normKey(clienteGS)}||${normKey(destino)}`) ??
@@ -139,7 +218,7 @@ async function buildScenarioPayload(opts: {
       geoByCliente.get(normKey(clienteGS)) ??
       geoByCliente.get(normKey(cliente)) ??
       null;
-    const city = geo?.ciudad || clienteGS || destino;
+    const city = asignado?.ciudad || geo?.ciudad || clienteGS || destino;
     const orders = [];
     for (const [numeroOrden, lineas] of pedidos) {
       const productMap = new Map<string, number>();
@@ -161,15 +240,19 @@ async function buildScenarioPayload(opts: {
         items,
       });
     }
+    // Info final a Drivin: primero la del cliente al que se concatenó; si no, la propia.
+    const nombreFinal = asignado?.nombre ?? clienteGS;
+    const latStr = asignado?.lat ?? geo?.lat ?? null;
+    const lngStr = asignado?.lng ?? geo?.lon ?? null;
     clients.push({
-      name: titleCase(clienteGS),
-      client_name: titleCase(clienteGS),
-      client_code: codigoTat ?? drivinMatch?.code ?? null,
-      address: titleCase(direccionTat ?? drivinMatch?.address1 ?? geo?.direccion ?? destino),
+      name: titleCase(nombreFinal),
+      client_name: titleCase(nombreFinal),
+      client_code: asignado?.codigo ?? codigoTat ?? drivinMatch?.code ?? null,
+      address: titleCase(asignado?.direccion ?? direccionTat ?? drivinMatch?.address1 ?? geo?.direccion ?? destino),
       city: titleCase(city),
-      country: geo?.pais ?? "Colombia",
-      lat: geo?.lat ? parseFloat(geo.lat) : null,
-      lng: geo?.lon ? parseFloat(geo.lon) : null,
+      country: asignado?.pais ?? geo?.pais ?? "Colombia",
+      lat: latStr ? parseFloat(latStr) : null,
+      lng: lngStr ? parseFloat(lngStr) : null,
       orders,
     });
   }
