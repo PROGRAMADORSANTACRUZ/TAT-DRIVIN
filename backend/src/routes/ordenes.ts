@@ -1219,7 +1219,9 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
           numeroOrden,
           cliente: String(f.razon_social_cliente ?? "").trim(),
           destino,
-          producto: String(f.tipo_comercial ?? "").trim(),
+          // Inversiones (cia 8) no envía tipo_comercial: se usa un fallback para
+          // que la orden tenga descripción de producto (y no quede vacía).
+          producto: String(f.tipo_comercial ?? "").trim() || "MERCANCÍA",
           cantidadKg: Number(f.cantidad_inv) || 0,
           // El NIT guardado es NIT-sucursal (identidad única del cliente por sucursal).
           nit: codigo,
