@@ -472,33 +472,49 @@ export default function PlanificacionDLPage() {
     setLoadingAccion(true);
     setError(null);
     try {
-      // Si el destino ya tiene una planilla activa hoy, se anula y recrea para
-      // incluir la remisión (marcándola para reimpresión si ya estaba impresa).
+      // Si el destino ya tiene una planilla activa hoy, se AÑADE la remisión a esa
+      // planilla y se marca para REIMPRESIÓN (no se anula).
       if (destino !== "liberar") {
         const planillaDestinoHoy = planillasHoy.find(
           (p) => p.placa.toUpperCase() === destino.toUpperCase() && !p.anulada
         );
         if (planillaDestinoHoy) {
-          // Primero reasignar las órdenes al destino, luego recrear su planilla.
           await asignarOrdenes(eliminandoItem.ids, destino);
-          await anularPlanilla(planillaDestinoHoy.id);
+          const ords = ordenes.filter((o) => eliminandoItem.ids.includes(o.id));
+          const kg = ords.reduce((s, o) => s + o.cantidadKg, 0);
+          const o0 = ords[0];
+          let itemsDestino = planillaDestinoHoy.items ?? [];
+          if (o0) {
+            const codigo = codigoPorClave.get(claveCD(o0.cliente, o0.destino));
+            const cli = codigo ? clientePorCodigo.get(codigo.toUpperCase()) : undefined;
+            const nuevoItem: PlanillaItem = {
+              numeroOrden: eliminandoItem.numeroOrden,
+              cliente: o0.cliente,
+              destino: o0.destino,
+              area: areaDe(o0),
+              codigoArea: `${o0.cliente}-${o0.destino}`.toUpperCase(),
+              nombreDestino: cli?.nombreDireccion || tc(o0.destino),
+              direccion: cli?.direccion || "",
+              kg,
+            };
+            itemsDestino = [
+              ...itemsDestino.filter((it) => it.numeroOrden !== eliminandoItem.numeroOrden),
+              nuevoItem,
+            ];
+          }
+          // impresa=false conserva impresaAt → la plantilla queda marcada "Reimpresión".
+          await editarPlanilla(planillaDestinoHoy.id, { items: itemsDestino, impresa: false });
           await addCambio({
-            tipo: "movimiento",
+            tipo: "reimpresion",
             remision: eliminandoItem.numeroOrden,
             deVehiculo: eliminandoItem.vehiculoActual,
             aVehiculo: destino,
             dlOrigen: planillaDestinoHoy.consecutivo,
-            detalle: planillaDestinoHoy.impresa
-              ? "Remisión movida a vehículo con planilla impresa (reimprimir)"
-              : "Remisión movida a vehículo con planilla de hoy (recrear)",
+            detalle: "Remisión agregada a la plantilla de hoy (requiere reimpresión)",
           });
           refrescarCambios();
           setEliminandoItem(null);
-          setMessage(
-            planillaDestinoHoy.impresa
-              ? `Remisión movida a ${destino}. La planilla ${dlLabel(planillaDestinoHoy.consecutivo)} fue anulada y recreada. Reimprimir.`
-              : `Remisión movida a ${destino}. La planilla ${dlLabel(planillaDestinoHoy.consecutivo)} se actualizó para incluir la remisión.`
-          );
+          setMessage(`Remisión movida a ${destino}. La planilla ${dlLabel(planillaDestinoHoy.consecutivo)} necesita reimpresión.`);
           await load();
           return;
         }
