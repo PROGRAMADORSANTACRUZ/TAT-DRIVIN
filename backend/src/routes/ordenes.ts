@@ -364,11 +364,67 @@ router.get("/", requireAuth, async (req, res, next) => {
     // ?all=true devuelve todas; por defecto solo activas (excluye Entregado/Rechazado)
     // para reducir payload en el cliente (el sistema solo necesita las activas)
     const todas = req.query.all === "true";
-    const ordenes = await prisma.orden.findMany({
-      where: todas ? undefined : { estado: { notIn: ["Entregado", "Rechazado"] } },
-      orderBy: [{ cliente: "asc" }, { destino: "asc" }, { numeroOrden: "asc" }],
+    const [ordenes, clientesGS, clientesTat] = await Promise.all([
+      prisma.orden.findMany({
+        where: todas ? undefined : { estado: { notIn: ["Entregado", "Rechazado"] } },
+        orderBy: [{ cliente: "asc" }, { destino: "asc" }, { numeroOrden: "asc" }],
+      }),
+      prisma.cliente.findMany({
+        select: { cliente: true, direccion: true, codigoDireccion: true, consecutivos: true },
+      }),
+      prisma.clienteTat.findMany({
+        where: { eliminado: false, editado: true, nit: { not: null } },
+        select: { nit: true, sucursal: true, direccion1: true },
+      }),
+    ]);
+
+    // Dirección actual del maestro GS por consecutivo y por código (fuente de verdad editable).
+    const gsPorConsecutivo = new Map<string, string>();
+    const gsPorCodigo = new Map<string, string>();
+    for (const c of clientesGS) {
+      const dir = (c.direccion ?? "").trim();
+      if (!dir) continue;
+      if (c.codigoDireccion && !gsPorCodigo.has(c.codigoDireccion.trim())) {
+        gsPorCodigo.set(c.codigoDireccion.trim(), dir);
+      }
+      if (c.consecutivos) {
+        try {
+          for (const con of JSON.parse(c.consecutivos) as string[]) {
+            const k = claveCliente(con);
+            if (k && !gsPorConsecutivo.has(k)) gsPorConsecutivo.set(k, dir);
+          }
+        } catch { /* consecutivos inválidos */ }
+      }
+    }
+    // Dirección del maestro TAT (solo clientes editados) por NIT-sucursal.
+    const tatPorClave = new Map<string, string>();
+    for (const c of clientesTat) {
+      const nit = String(c.nit ?? "").trim();
+      const dir = (c.direccion1 ?? "").trim();
+      if (!nit || dir.length < 2 || NO_DIRECCION_TAT.has(dir.toUpperCase())) continue;
+      const suc = parseInt(String(c.sucursal ?? "").trim(), 10);
+      const key = Number.isFinite(suc) ? `${nit}-${suc}` : nit;
+      if (!tatPorClave.has(key)) tatPorClave.set(key, dir);
+    }
+
+    // Sobrescribe la dirección de cada orden con la del maestro (datos en tiempo real).
+    const enriquecidas = ordenes.map((o) => {
+      let dir: string | undefined;
+      if (o.distribucion === "TAT") {
+        dir =
+          (o.codigo ? gsPorCodigo.get(o.codigo) : undefined) ??
+          gsPorConsecutivo.get(claveCliente(`${o.cliente} - ${o.destino}`)) ??
+          (o.nit ? tatPorClave.get(o.nit) : undefined);
+      } else {
+        dir =
+          gsPorConsecutivo.get(claveCliente(`${o.cliente} - ${o.destino}`)) ??
+          gsPorConsecutivo.get(claveCliente(o.destino)) ??
+          (o.codigo ? gsPorCodigo.get(o.codigo) : undefined);
+      }
+      return dir ? { ...o, direccion: dir } : o;
     });
-    res.json(ordenes);
+
+    res.json(enriquecidas);
   } catch (err) {
     next(err);
   }
