@@ -160,7 +160,6 @@ export default function PlanificacionDLPage() {
     ids: string[];
     vehiculoActual: string;
   } | null>(null);
-  const [destinoItem, setDestinoItem] = useState("");
   // Estado para confirmar anulación antes de cambiar datos de una planilla ya creada.
   // `override` lleva los datos NUEVOS con los que se creará la planilla de reemplazo.
   const [confirmandoAnulacion, setConfirmandoAnulacion] = useState<{
@@ -221,6 +220,13 @@ export default function PlanificacionDLPage() {
   }, []);
 
   const despachos = useMemo(() => agruparDespachos(ordenes, vehiculos), [ordenes, vehiculos]);
+
+  // Kg actualmente cargados por placa (para calcular capacidad al pasar remisiones).
+  const cargaPorPlaca = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const d of despachos) m.set(d.placa.toUpperCase(), d.kilos);
+    return m;
+  }, [despachos]);
 
   // Plantillas creadas hoy y placas que ya tienen plantilla hoy (para ocultarlas).
   const planillasHoy = useMemo(
@@ -385,17 +391,6 @@ export default function PlanificacionDLPage() {
     return ordenes.filter((o) => set.has(o.id)).reduce((s, o) => s + o.cantidadKg, 0);
   };
 
-  // Capacidad de un vehículo y si una remisión de `remKg` cabe (como en asignación).
-  function capacidadVehiculo(v: VehiculoExterno, remKg: number) {
-    const d = despachos.find((x) => x.placa.toUpperCase() === v.placa.toUpperCase());
-    const kgActual = d?.kilos ?? 0;
-    const capMax = parseFloat(v.capacidadReal ?? v.capacidad ?? "");
-    const tieneCap = Number.isFinite(capMax) && capMax > 0;
-    const cabe = !tieneCap || kgActual + remKg <= capMax;
-    const pct = tieneCap ? Math.round((kgActual / capMax) * 100) : null;
-    return { kgActual, capMax, tieneCap, cabe, pct };
-  }
-
   // Anula la planilla (soft-delete para trazabilidad) y libera/reasigna la carga
   async function resolverEliminacion(destino: "liberar" | string) {
     const p = eliminando;
@@ -499,7 +494,6 @@ export default function PlanificacionDLPage() {
           });
           refrescarCambios();
           setEliminandoItem(null);
-          setDestinoItem("");
           setMessage(
             planillaDestinoHoy.impresa
               ? `Remisión movida a ${destino}. La planilla ${dlLabel(planillaDestinoHoy.consecutivo)} fue anulada y recreada. Reimprimir.`
@@ -517,7 +511,6 @@ export default function PlanificacionDLPage() {
       );
       refrescarCambios();
       setEliminandoItem(null);
-      setDestinoItem("");
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al reasignar remisión");
@@ -845,6 +838,7 @@ export default function PlanificacionDLPage() {
           planilla={editando}
           vehiculos={vehiculos}
           ordenes={ordenes}
+          cargaPorPlaca={cargaPorPlaca}
           onClose={() => setEditando(null)}
           onSaved={() => {
             setEditando(null);
@@ -1024,89 +1018,21 @@ export default function PlanificacionDLPage() {
 
       {/* Quitar remisión individual (antes de crear planilla) */}
       {eliminandoItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => { setEliminandoItem(null); setDestinoItem(""); }}>
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#fbeceb] text-[#b3261e]">
-                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                </svg>
-              </span>
-              <div>
-                <h3 className="text-base font-semibold text-[#14352a]">Quitar remisión</h3>
-                <p className="text-xs text-[#7a8794]">Documento: <span className="font-semibold">{eliminandoItem.numeroOrden}</span></p>
-              </div>
-            </div>
-            <p className="text-sm text-[#5f7a68]">¿Qué deseas hacer con esta remisión?</p>
-            <div className="mt-4 flex flex-col gap-2">
-              <button onClick={() => resolverEliminacionItem("liberar")} className="flex items-start gap-3 rounded-lg border border-[#dfe4e0] bg-white px-4 py-3 text-left transition-colors hover:bg-[#f4f6f3]">
-                <svg className="mt-0.5 h-5 w-5 shrink-0 text-[#2f8f4e]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-                </svg>
-                <span>
-                  <span className="block text-sm font-semibold text-[#14352a]">Devolver a carga de órdenes</span>
-                  <span className="block text-xs text-[#7a8794]">La remisión queda disponible para asignarse de nuevo.</span>
-                </span>
-              </button>
-              <div className="rounded-lg border border-[#dfe4e0] px-4 py-3">
-                <p className="mb-2 text-sm font-semibold text-[#14352a]">Pasar a otro vehículo</p>
-                {(() => {
-                  const remKg = kgDeIds(eliminandoItem.ids);
-                  const candidatos = vehiculos.filter(
-                    (v) => v.placa.toUpperCase() !== eliminandoItem.vehiculoActual.toUpperCase()
-                  );
-                  const sel = candidatos.find((v) => v.placa === destinoItem);
-                  const selCap = sel ? capacidadVehiculo(sel, remKg) : null;
-                  const pctFinal = selCap && selCap.tieneCap
-                    ? Math.round(((selCap.kgActual + remKg) / selCap.capMax) * 100)
-                    : 0;
-                  return (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <select value={destinoItem} onChange={(e) => setDestinoItem(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-[#dfe4e0] bg-white px-3 py-2 text-sm text-[#14352a] outline-none focus:border-[#2f8f4e] focus:ring-2 focus:ring-[#2f8f4e]/20">
-                          <option value="">Selecciona vehículo…</option>
-                          {candidatos.map((v) => {
-                            const c = capacidadVehiculo(v, remKg);
-                            const info = c.tieneCap ? `${fmtKg(c.kgActual)}/${fmtKg(c.capMax)} kg · ${c.pct}%` : `${fmtKg(c.kgActual)} kg`;
-                            return (
-                              <option key={v.id} value={v.placa} disabled={!c.cabe}>
-                                {v.placa} — {v.conductor ?? "Sin conductor"} · {info}{!c.cabe ? " · SIN ESPACIO" : ""}
-                              </option>
-                            );
-                          })}
-                        </select>
-                        <button onClick={() => destinoItem && selCap?.cabe && resolverEliminacionItem(destinoItem)} disabled={!destinoItem || !selCap?.cabe} className="shrink-0 whitespace-nowrap rounded-lg bg-[#2f8f4e] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#277a42] disabled:opacity-40">
-                          Pasar
-                        </button>
-                      </div>
-                      <p className="mt-1.5 text-[11px] text-[#7a8794]">Esta remisión pesa {fmtKg(remKg)} kg. Solo se habilitan los vehículos con espacio.</p>
-                      {sel && selCap && (
-                        <div className="mt-2">
-                          {selCap.tieneCap ? (
-                            <>
-                              <div className="mb-1 flex items-center justify-between text-[11px]">
-                                <span className={selCap.cabe ? "font-medium text-[#2f8f4e]" : "font-medium text-[#b3261e]"}>
-                                  {selCap.cabe ? "Cabe" : "Sin espacio"} · quedaría en {pctFinal}%
-                                </span>
-                                <span className="text-[#7a8794]">{fmtKg(selCap.kgActual + remKg)}/{fmtKg(selCap.capMax)} kg</span>
-                              </div>
-                              <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#eef2ee]">
-                                <div className={`h-full ${selCap.cabe ? "bg-[#2f8f4e]" : "bg-[#b3261e]"}`} style={{ width: `${Math.min(100, pctFinal)}%` }} />
-                              </div>
-                            </>
-                          ) : (
-                            <p className="text-[11px] text-[#7a8794]">Este vehículo no tiene capacidad definida.</p>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-            <button onClick={() => { setEliminandoItem(null); setDestinoItem(""); }} className="mt-3 w-full rounded-lg px-4 py-2 text-sm font-medium text-[#7a8794] transition-colors hover:bg-[#f4f6f3]">Cancelar</button>
-          </div>
-        </div>
+        <QuitarRemisionModal
+          numeroOrden={eliminandoItem.numeroOrden}
+          remisionKg={kgDeIds(eliminandoItem.ids)}
+          vehiculoActual={eliminandoItem.vehiculoActual}
+          vehiculos={vehiculos}
+          cargaPorPlaca={cargaPorPlaca}
+          loading={loadingAccion}
+          devolver={{
+            titulo: "Devolver a carga de órdenes",
+            descripcion: "La remisión queda disponible para asignarse de nuevo.",
+            onClick: () => resolverEliminacionItem("liberar"),
+          }}
+          onPasar={(placa) => resolverEliminacionItem(placa)}
+          onClose={() => setEliminandoItem(null)}
+        />
       )}
     </div>
   );
@@ -1117,6 +1043,7 @@ function EditarPlanillaModal({
   planilla,
   vehiculos,
   ordenes,
+  cargaPorPlaca,
   onClose,
   onSaved,
   onAnular,
@@ -1124,6 +1051,7 @@ function EditarPlanillaModal({
   planilla: Planilla;
   vehiculos: VehiculoExterno[];
   ordenes: Orden[];
+  cargaPorPlaca: Map<string, number>;
   onClose: () => void;
   onSaved: () => void;
   onAnular: (planilla: Planilla, accion: "liberar" | "mantener" | string, override?: AnularPlanillaOverride) => void;
@@ -1135,7 +1063,6 @@ function EditarPlanillaModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quitandoItem, setQuitandoItem] = useState<PlanillaItem | null>(null);
-  const [destinoQuitado, setDestinoQuitado] = useState("");
 
   const totalKg = items.reduce((s, i) => s + (Number(i.kg) || 0), 0);
 
@@ -1145,7 +1072,25 @@ function EditarPlanillaModal({
   function confirmarQuitarItem(item: PlanillaItem) {
     setItems((prev) => prev.filter((x) => x.numeroOrden !== item.numeroOrden));
     setQuitandoItem(null);
-    setDestinoQuitado("");
+  }
+
+  // Pasa la remisión a otro vehículo: reasigna la orden y la quita del documento.
+  async function handlePasarItem(item: PlanillaItem, destino: string) {
+    const ids = ordenes
+      .filter(
+        (o) =>
+          o.numeroOrden === item.numeroOrden &&
+          o.asignadoVehiculo?.toUpperCase() === planilla.placa.toUpperCase() &&
+          o.estado !== "Entregado" &&
+          o.estado !== "Rechazado"
+      )
+      .map((o) => o.id);
+    try {
+      if (ids.length > 0) await asignarOrdenes(ids, destino);
+      confirmarQuitarItem(item);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Error al pasar remisión");
+    }
   }
 
   async function handleGuardar() {
@@ -1320,46 +1265,141 @@ function EditarPlanillaModal({
 
       {/* Mini-modal: quitar remisión con opciones */}
       {quitandoItem && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => { setQuitandoItem(null); setDestinoQuitado(""); }}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h4 className="text-sm font-semibold text-[#14352a]">Quitar remisión</h4>
-            <p className="mt-0.5 text-xs text-[#7a8794]">Documento: <span className="font-semibold">{quitandoItem.numeroOrden}</span></p>
-            <div className="mt-3 flex flex-col gap-2">
-              <button
-                onClick={() => confirmarQuitarItem(quitandoItem)}
-                className="flex items-start gap-2 rounded-lg border border-[#dfe4e0] bg-white px-3 py-2.5 text-left transition-colors hover:bg-[#f4f6f3]"
-              >
-                <svg className="mt-0.5 h-4 w-4 shrink-0 text-[#2f8f4e]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-                </svg>
-                <span>
-                  <span className="block text-xs font-semibold text-[#14352a]">Solo quitar del documento</span>
-                  <span className="block text-[11px] text-[#7a8794]">La remisión permanece asignada al vehículo.</span>
-                </span>
-              </button>
-              <div className="rounded-lg border border-[#dfe4e0] px-3 py-2.5">
-                <p className="mb-1.5 text-xs font-semibold text-[#14352a]">Pasar a otro vehículo</p>
-                <div className="flex items-center gap-2">
-                  <select value={destinoQuitado} onChange={(e) => setDestinoQuitado(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-[#dfe4e0] bg-white px-2 py-1.5 text-xs text-[#14352a] outline-none focus:border-[#2f8f4e] focus:ring-2 focus:ring-[#2f8f4e]/20">
-                    <option value="">Selecciona…</option>
-                    {vehiculos.filter((v) => v.placa.toUpperCase() !== planilla.placa.toUpperCase()).map((v) => (
-                      <option key={v.id} value={v.placa}>{v.placa} — {v.conductor ?? "Sin conductor"}</option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => { if (destinoQuitado) confirmarQuitarItem(quitandoItem); }}
-                    disabled={!destinoQuitado}
-                    className="shrink-0 whitespace-nowrap rounded-lg bg-[#2f8f4e] px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#277a42] disabled:opacity-40"
-                  >
-                    Pasar
-                  </button>
-                </div>
-              </div>
-            </div>
-            <button onClick={() => { setQuitandoItem(null); setDestinoQuitado(""); }} className="mt-2 w-full rounded-lg px-3 py-1.5 text-xs font-medium text-[#7a8794] transition-colors hover:bg-[#f4f6f3]">Cancelar</button>
+        <QuitarRemisionModal
+          numeroOrden={quitandoItem.numeroOrden}
+          remisionKg={Number(quitandoItem.kg) || 0}
+          vehiculoActual={planilla.placa}
+          vehiculos={vehiculos}
+          cargaPorPlaca={cargaPorPlaca}
+          devolver={{
+            titulo: "Solo quitar del documento",
+            descripcion: "La remisión permanece asignada al vehículo.",
+            onClick: () => confirmarQuitarItem(quitandoItem),
+          }}
+          onPasar={(placa) => handlePasarItem(quitandoItem, placa)}
+          onClose={() => setQuitandoItem(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Modal compartido: quitar remisión (devolver / pasar a otro vehículo) ───────
+// Selector de vehículos en cards: verde = cabe, rojo suave = sin capacidad.
+function QuitarRemisionModal({
+  numeroOrden,
+  remisionKg,
+  vehiculoActual,
+  vehiculos,
+  cargaPorPlaca,
+  devolver,
+  onPasar,
+  onClose,
+  loading,
+}: {
+  numeroOrden: string;
+  remisionKg: number;
+  vehiculoActual: string;
+  vehiculos: VehiculoExterno[];
+  cargaPorPlaca: Map<string, number>;
+  devolver: { titulo: string; descripcion: string; onClick: () => void };
+  onPasar: (placa: string) => void;
+  onClose: () => void;
+  loading?: boolean;
+}) {
+  const fmtKg = (n: number) =>
+    n.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const candidatos = vehiculos
+    .filter((v) => v.placa.toUpperCase() !== vehiculoActual.toUpperCase())
+    .map((v) => {
+      const kgActual = cargaPorPlaca.get(v.placa.toUpperCase()) ?? 0;
+      const capMax = parseFloat(v.capacidadReal ?? v.capacidad ?? "");
+      const tieneCap = Number.isFinite(capMax) && capMax > 0;
+      const cabe = !tieneCap || kgActual + remisionKg <= capMax;
+      const pctFinal = tieneCap ? Math.round(((kgActual + remisionKg) / capMax) * 100) : 0;
+      return { v, kgActual, capMax, tieneCap, cabe, pctFinal };
+    })
+    .sort((a, b) => Number(b.cabe) - Number(a.cabe) || a.v.placa.localeCompare(b.v.placa));
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" onClick={loading ? undefined : onClose}>
+      <div className="flex max-h-[85vh] w-full max-w-xl flex-col rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 border-b border-[#eceef0] px-5 py-4">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fbeceb] text-[#b3261e]">
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+          </span>
+          <div>
+            <h3 className="text-base font-semibold text-[#14352a]">Quitar remisión</h3>
+            <p className="text-xs text-[#7a8794]">Documento: <span className="font-semibold">{numeroOrden}</span> · {fmtKg(remisionKg)} kg</p>
           </div>
         </div>
-      )}
+
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+          <button
+            onClick={devolver.onClick}
+            disabled={loading}
+            className="flex w-full items-start gap-3 rounded-lg border border-[#dfe4e0] bg-white px-4 py-3 text-left transition-colors hover:bg-[#f4f6f3] disabled:opacity-60"
+          >
+            <svg className="mt-0.5 h-5 w-5 shrink-0 text-[#2f8f4e]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+            </svg>
+            <span>
+              <span className="block text-sm font-semibold text-[#14352a]">{devolver.titulo}</span>
+              <span className="block text-xs text-[#7a8794]">{devolver.descripcion}</span>
+            </span>
+          </button>
+
+          <p className="mb-1 mt-4 text-sm font-semibold text-[#14352a]">Pasar a otro vehículo</p>
+          <p className="mb-2.5 text-[11px] text-[#7a8794]">
+            <span className="font-medium text-[#2f8f4e]">Verde</span>: hay espacio.{" "}
+            <span className="font-medium text-[#b3261e]">Rojo</span>: sin capacidad para esta remisión.
+          </p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {candidatos.map(({ v, kgActual, capMax, tieneCap, cabe, pctFinal }) => (
+              <button
+                key={v.id}
+                disabled={!cabe || loading}
+                onClick={() => cabe && onPasar(v.placa)}
+                className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                  cabe
+                    ? "border-[#cfe4d6] bg-[#f2f9ef] hover:bg-[#e8f3e2]"
+                    : "cursor-not-allowed border-[#f0c4c1] bg-[#fdf2f1]"
+                } ${loading ? "opacity-60" : ""}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-[#14352a]">{v.placa}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${cabe ? "bg-[#e8f3e2] text-[#2f8f4e]" : "bg-[#fbeceb] text-[#b3261e]"}`}>
+                    {cabe ? "Cabe" : "Sin espacio"}
+                  </span>
+                </div>
+                <p className="truncate text-xs text-[#7a8794]">{v.conductor ?? "Sin conductor"}</p>
+                {tieneCap ? (
+                  <>
+                    <div className="mt-1.5 flex items-center justify-between text-[10px] text-[#7a8794]">
+                      <span>{fmtKg(kgActual)}/{fmtKg(capMax)} kg</span>
+                      <span>{pctFinal}%</span>
+                    </div>
+                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#eef2ee]">
+                      <div className={`h-full ${cabe ? "bg-[#2f8f4e]" : "bg-[#b3261e]"}`} style={{ width: `${Math.min(100, pctFinal)}%` }} />
+                    </div>
+                  </>
+                ) : (
+                  <p className="mt-1.5 text-[10px] text-[#7a8794]">Sin capacidad definida</p>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="shrink-0 border-t border-[#eceef0] px-5 py-3">
+          <button onClick={onClose} disabled={loading} className="w-full rounded-lg px-4 py-2 text-sm font-medium text-[#7a8794] transition-colors hover:bg-[#f4f6f3] disabled:opacity-60">
+            Cancelar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
