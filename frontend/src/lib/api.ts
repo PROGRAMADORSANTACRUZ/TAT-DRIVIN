@@ -233,6 +233,9 @@ export interface Orden {
   cargado: boolean;
   cargadoAt: string | null;
   createdAt: string;
+  // Cliente enrutado por concatenado (NIT) hacia otro cliente distinto al del Excel.
+  clienteOriginal?: string;
+  sobrescritoConcatenado?: boolean;
 }
 
 export function getOrdenes(all = false): Promise<Orden[]> {

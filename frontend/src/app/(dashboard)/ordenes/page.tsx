@@ -58,6 +58,7 @@ type OrdenGrupo = {
   tatOrigen: string | null;
   direccion: string | null;
   vendedor: string | null;
+  sobrescritoConcatenado: boolean;
 };
 
 function agrupar(ordenes: Orden[]): OrdenGrupo[] {
@@ -84,6 +85,7 @@ function agrupar(ordenes: Orden[]): OrdenGrupo[] {
         tatOrigen: o.tatOrigen ?? null,
         direccion: o.direccion ?? null,
         vendedor: o.vendedor ?? null,
+        sobrescritoConcatenado: !!o.sobrescritoConcatenado,
       };
       map.set(key, g);
     }
@@ -255,11 +257,6 @@ const IconLink = () => (
   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
     <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-  </svg>
-);
-const IconCheck = () => (
-  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12" />
   </svg>
 );
 const IconPlus = () => (
@@ -447,7 +444,11 @@ export default function OrdenesPage() {
 
   async function handleAsignar(clienteId: string) {
     if (!asignarTarget) return;
-    const consecutivo = `${asignarTarget.cliente} - ${asignarTarget.destino}`;
+    // TAT: el concatenado es el NIT-sucursal (ruteo por NIT, prioridad sobre el Excel).
+    const consecutivo =
+      asignarTarget.distribucion === "TAT" && asignarTarget.nit
+        ? asignarTarget.nit
+        : `${asignarTarget.cliente} - ${asignarTarget.destino}`;
     try {
       await asignarConsecutivo(clienteId, consecutivo);
       setMessage(`Consecutivo asignado. Actualizando verificación…`);
@@ -978,7 +979,6 @@ export default function OrdenesPage() {
                         const codigo = activeCat.isTat
                           ? g.codigo
                           : codigoPorClave.get(claveCD(g.cliente, g.destino));
-                        const registrado = !!codigoPorClave.get(claveCD(g.cliente, g.destino));
                         return (
                         <tr
                           key={g.key}
@@ -995,7 +995,12 @@ export default function OrdenesPage() {
                           {activeCat.isTat ? (
                             <>
                               <td className="whitespace-nowrap px-4 py-3 text-[#45505e]">{g.nit || "—"}</td>
-                              <td className="px-4 py-3 text-[#45505e]">{tc(g.cliente) || "—"}</td>
+                              <td className="px-4 py-3 text-[#45505e]">
+                                {g.sobrescritoConcatenado && (
+                                  <span className="block text-[10px] font-medium text-[#b5731e]">sobrescrito por concatenado</span>
+                                )}
+                                {tc(g.cliente) || "—"}
+                              </td>
                               <td className="px-4 py-3 text-[#45505e]">{dirLimpia(g.direccion) ? tc(dirLimpia(g.direccion)) : "—"}</td>
                               <td className="px-4 py-3 text-right tabular-nums text-[#45505e]">
                                 {consolidarProductos(g.items).length}
@@ -1009,7 +1014,6 @@ export default function OrdenesPage() {
                               <td className="px-4 py-3 text-[#45505e]">{g.vendedor ? tc(g.vendedor) : "—"}</td>
                               <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                                 <AccionesOrden
-                                  registrado={registrado}
                                   onAsignar={() => setAsignarTarget(grupoAClienteSinReg(g))}
                                   onEditar={() => abrirEditar(g)}
                                   onEliminar={() => setEliminarSinRegTarget(grupoAClienteSinReg(g))}
@@ -1030,7 +1034,12 @@ export default function OrdenesPage() {
                                   <span className="text-xs text-[#c47f1a]">Sin código</span>
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-[#45505e]">{g.cliente || "—"}</td>
+                              <td className="px-4 py-3 text-[#45505e]">
+                                {g.sobrescritoConcatenado && (
+                                  <span className="block text-[10px] font-medium text-[#b5731e]">sobrescrito por concatenado</span>
+                                )}
+                                {g.cliente || "—"}
+                              </td>
                               <td className="px-4 py-3 text-[#45505e]">{g.destino || "—"}</td>
                               <td className="px-4 py-3 text-right tabular-nums text-[#45505e]">
                                 {consolidarProductos(g.items).length}
@@ -1040,7 +1049,6 @@ export default function OrdenesPage() {
                               </td>
                               <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                                 <AccionesOrden
-                                  registrado={registrado}
                                   onAsignar={() => setAsignarTarget(grupoAClienteSinReg(g))}
                                   onEditar={() => abrirEditar(g)}
                                   onEliminar={() => setEliminarSinRegTarget(grupoAClienteSinReg(g))}
@@ -1535,14 +1543,12 @@ export default function OrdenesPage() {
   );
 }
 
-// ── Acciones por orden (editar / asignar / eliminar) ──────────────────────────
+// ── Acciones por orden (editar / reasignar / eliminar) ────────────────────────
 function AccionesOrden({
-  registrado,
   onAsignar,
   onEditar,
   onEliminar,
 }: {
-  registrado: boolean;
   onAsignar: () => void;
   onEditar: () => void;
   onEliminar: () => void;
@@ -1559,24 +1565,14 @@ function AccionesOrden({
       >
         <IconPencil />
       </button>
-      {registrado ? (
-        <span
-          title="Asignado"
-          aria-label="Asignado"
-          className={`${base} border-[#cfe4d6] bg-[#eef7ea] text-[#2f8f4e]`}
-        >
-          <IconCheck />
-        </span>
-      ) : (
-        <button
-          title="Asignar"
-          aria-label="Asignar"
-          onClick={onAsignar}
-          className={`${base} border-[#dfe4e0] bg-white text-[#45505e] hover:bg-[#f4f6f3]`}
-        >
-          <IconLink />
-        </button>
-      )}
+      <button
+        title="Reasignar cliente"
+        aria-label="Reasignar cliente"
+        onClick={onAsignar}
+        className={`${base} border-[#dfe4e0] bg-white text-[#45505e] hover:bg-[#f4f6f3]`}
+      >
+        <IconLink />
+      </button>
       <button
         title="Eliminar"
         aria-label="Eliminar"

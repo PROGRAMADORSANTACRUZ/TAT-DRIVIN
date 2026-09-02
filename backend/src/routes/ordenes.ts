@@ -452,7 +452,7 @@ router.get("/", requireAuth, async (req, res, next) => {
         return {
           ...o,
           ...(rut.direccion ? { direccion: rut.direccion } : {}),
-          ...(rut.nombre ? { cliente: rut.nombre } : {}),
+          ...(rut.nombre ? { cliente: rut.nombre, clienteOriginal: o.cliente, sobrescritoConcatenado: true } : {}),
           ...(rut.codigo ? { codigo: rut.codigo } : {}),
         };
       }
