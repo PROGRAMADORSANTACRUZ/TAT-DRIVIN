@@ -468,10 +468,11 @@ router.get("/", requireAuth, async (req, res, next) => {
           (o.codigo ? gsPorCodigo.get(o.codigo) : undefined);
       }
       if (!info) return o;
+      // Solo se sobrescribe la dirección: el nombre se mantiene para no romper
+      // la clave cliente||destino que cruza con verificar-clientes.
       return {
         ...o,
         ...(info.direccion ? { direccion: info.direccion } : {}),
-        ...(info.nombre ? { cliente: info.nombre } : {}),
       };
     });
 

@@ -11,12 +11,14 @@ import {
   deleteOrdenes,
   eliminarOrdenesPorIds,
   getClientes,
+  getClientesTat,
   getOrdenes,
   importOrdenes,
   syncOrdenesTat,
   verificarClientesOrdenes,
   type Cliente,
   type ClienteSinRegistrar,
+  type ClienteTat,
   type Orden,
   type VerificacionClientes,
 } from "@/lib/api";
@@ -238,6 +240,27 @@ const IconClose = () => (
     <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
   </svg>
 );
+const IconPencil = () => (
+  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </svg>
+);
+const IconLink = () => (
+  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+  </svg>
+);
+const IconCheck = () => (
+  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+const IconPlus = () => (
+  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
 
 export default function OrdenesPage() {
   const [ordenes, setOrdenes] = useState<Orden[]>([]);
@@ -258,6 +281,9 @@ export default function OrdenesPage() {
   const [verifModalOpen, setVerifModalOpen] = useState(false);
   const [buscarVerif, setBuscarVerif] = useState("");
   const [clientesDb, setClientesDb] = useState<Cliente[]>([]);
+  const [clientesTatDb, setClientesTatDb] = useState<ClienteTat[]>([]);
+  const [editGsTarget, setEditGsTarget] = useState<Cliente | null>(null);
+  const [editTatTarget, setEditTatTarget] = useState<ClienteTat | null>(null);
   const [asignarTarget, setAsignarTarget] = useState<ClienteSinRegistrar | null>(null);
   const [crearTarget, setCrearTarget] = useState<ClienteSinRegistrar | null>(null);
   const [eliminarSinRegTarget, setEliminarSinRegTarget] = useState<ClienteSinRegistrar | null>(null);
@@ -275,6 +301,9 @@ export default function OrdenesPage() {
       getClientes()
         .then(setClientesDb)
         .catch(() => setClientesDb([]));
+      getClientesTat()
+        .then(setClientesTatDb)
+        .catch(() => setClientesTatDb([]));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al cargar");
     }
@@ -418,6 +447,24 @@ export default function OrdenesPage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al asignar");
     }
+  }
+
+  // Abre el cliente existente para editar; si no está en la DB, ofrece crearlo.
+  function abrirEditar(g: OrdenGrupo) {
+    if (g.distribucion === "TAT") {
+      const found = clientesTatDb.find((c) => {
+        if (!c.nit) return false;
+        const suc = parseInt(String(c.sucursal ?? ""), 10);
+        const clave = Number.isFinite(suc) ? `${c.nit}-${suc}` : c.nit;
+        return clave === g.nit || c.nit === g.nit;
+      });
+      if (found) { setEditTatTarget(found); return; }
+    } else {
+      const cod = codigoPorClave.get(claveCD(g.cliente, g.destino));
+      const found = clientesDb.find((c) => !!cod && c.codigoDireccion === cod);
+      if (found) { setEditGsTarget(found); return; }
+    }
+    setCrearTarget(grupoAClienteSinReg(g));
   }
 
   async function handleEliminarSinRegistrar(c: ClienteSinRegistrar) {
@@ -908,6 +955,7 @@ export default function OrdenesPage() {
                         const codigo = activeCat.isTat
                           ? g.codigo
                           : codigoPorClave.get(claveCD(g.cliente, g.destino));
+                        const registrado = !!codigoPorClave.get(claveCD(g.cliente, g.destino));
                         return (
                         <tr
                           key={g.key}
@@ -938,7 +986,9 @@ export default function OrdenesPage() {
                               <td className="px-4 py-3 text-[#45505e]">{g.vendedor ? tc(g.vendedor) : "—"}</td>
                               <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                                 <AccionesOrden
+                                  registrado={registrado}
                                   onAsignar={() => setAsignarTarget(grupoAClienteSinReg(g))}
+                                  onEditar={() => abrirEditar(g)}
                                   onEliminar={() => setEliminarSinRegTarget(grupoAClienteSinReg(g))}
                                 />
                               </td>
@@ -967,7 +1017,9 @@ export default function OrdenesPage() {
                               </td>
                               <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                                 <AccionesOrden
+                                  registrado={registrado}
                                   onAsignar={() => setAsignarTarget(grupoAClienteSinReg(g))}
+                                  onEditar={() => abrirEditar(g)}
                                   onEliminar={() => setEliminarSinRegTarget(grupoAClienteSinReg(g))}
                                 />
                               </td>
@@ -1238,22 +1290,28 @@ export default function OrdenesPage() {
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end gap-1.5">
                             <button
+                              title="Asignar"
+                              aria-label="Asignar"
                               onClick={() => setAsignarTarget(c)}
-                              className="rounded-lg border border-[#dfe4e0] bg-white px-2.5 py-1 text-xs font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#dfe4e0] bg-white text-[#45505e] transition-colors hover:bg-[#f4f6f3]"
                             >
-                              Asignar
+                              <IconLink />
                             </button>
                             <button
+                              title="Crear"
+                              aria-label="Crear"
                               onClick={() => setCrearTarget(c)}
-                              className="rounded-lg border border-[#cfe4d6] bg-[#eef7ea] px-2.5 py-1 text-xs font-medium text-[#2f8f4e] transition-colors hover:bg-[#e2f0dc]"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#cfe4d6] bg-[#eef7ea] text-[#2f8f4e] transition-colors hover:bg-[#e2f0dc]"
                             >
-                              Crear
+                              <IconPlus />
                             </button>
                             <button
+                              title="Eliminar"
+                              aria-label="Eliminar"
                               onClick={() => setEliminarSinRegTarget(c)}
-                              className="rounded-lg border border-[#f0c4c1] bg-[#fbeceb] px-2.5 py-1 text-xs font-medium text-[#b3261e] transition-colors hover:bg-[#f7dcda]"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#f0c4c1] bg-[#fbeceb] text-[#b3261e] transition-colors hover:bg-[#f7dcda]"
                             >
-                              Eliminar
+                              <IconTrash />
                             </button>
                           </div>
                         </td>
@@ -1323,6 +1381,36 @@ export default function OrdenesPage() {
         );
       })()}
 
+      {editGsTarget && (
+        <ClienteFormModal
+          modo="editarGS"
+          gs={editGsTarget}
+          onClose={() => setEditGsTarget(null)}
+          onSaved={() => {
+            setEditGsTarget(null);
+            setMessage("Cliente actualizado.");
+            load();
+          }}
+        />
+      )}
+
+      {editTatTarget && (
+        <ClienteFormModal
+          modo="editarTAT"
+          tat={editTatTarget}
+          onClose={() => setEditTatTarget(null)}
+          onSaved={() => {
+            setEditTatTarget(null);
+            setMessage("Cliente actualizado.");
+            load();
+          }}
+          onDeleted={() => {
+            setEditTatTarget(null);
+            load();
+          }}
+        />
+      )}
+
       {/* Modal: confirmar eliminación de órdenes de un cliente sin registrar */}
       {eliminarSinRegTarget && (
         <div
@@ -1378,27 +1466,55 @@ export default function OrdenesPage() {
   );
 }
 
-// ── Acciones por orden (asignar / eliminar) ───────────────────────────────────
+// ── Acciones por orden (editar / asignar / eliminar) ──────────────────────────
 function AccionesOrden({
+  registrado,
   onAsignar,
+  onEditar,
   onEliminar,
 }: {
+  registrado: boolean;
   onAsignar: () => void;
+  onEditar: () => void;
   onEliminar: () => void;
 }) {
+  const base =
+    "inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors";
   return (
     <div className="flex items-center justify-end gap-1.5">
       <button
-        onClick={onAsignar}
-        className="rounded-lg border border-[#dfe4e0] bg-white px-2.5 py-1 text-xs font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]"
+        title="Editar"
+        aria-label="Editar"
+        onClick={onEditar}
+        className={`${base} border-[#dfe4e0] bg-white text-[#4a6fa5] hover:bg-[#eef2f8]`}
       >
-        Asignar
+        <IconPencil />
       </button>
+      {registrado ? (
+        <span
+          title="Asignado"
+          aria-label="Asignado"
+          className={`${base} border-[#cfe4d6] bg-[#eef7ea] text-[#2f8f4e]`}
+        >
+          <IconCheck />
+        </span>
+      ) : (
+        <button
+          title="Asignar"
+          aria-label="Asignar"
+          onClick={onAsignar}
+          className={`${base} border-[#dfe4e0] bg-white text-[#45505e] hover:bg-[#f4f6f3]`}
+        >
+          <IconLink />
+        </button>
+      )}
       <button
+        title="Eliminar"
+        aria-label="Eliminar"
         onClick={onEliminar}
-        className="rounded-lg border border-[#f0c4c1] bg-[#fbeceb] px-2.5 py-1 text-xs font-medium text-[#b3261e] transition-colors hover:bg-[#f7dcda]"
+        className={`${base} border-[#f0c4c1] bg-[#fbeceb] text-[#b3261e] hover:bg-[#f7dcda]`}
       >
-        Eliminar
+        <IconTrash />
       </button>
     </div>
   );
