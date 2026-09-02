@@ -123,6 +123,21 @@ const dirLimpia = (d: string | null | undefined): string => {
   return s && !/^n\/?a$/i.test(s) ? s : "";
 };
 
+// Convierte un grupo de orden al formato que usan los modales de asignar/crear/eliminar.
+function grupoAClienteSinReg(g: OrdenGrupo): ClienteSinRegistrar {
+  return {
+    cliente: g.cliente,
+    destino: g.destino,
+    nit: g.nit,
+    codigo: g.codigo,
+    direccion: g.direccion,
+    distribucion: g.distribucion,
+    pedidos: 1,
+    numeros: [g.numeroOrden],
+    ids: g.items.map((it) => it.id),
+  };
+}
+
 type CategoryId = "BOVINO" | "PORCINO" | "TAT" | "INVERSIONES";
 
 const CATEGORIES = [
@@ -871,6 +886,7 @@ export default function OrdenesPage() {
                           <th className="px-4 py-3 text-right font-semibold">Total (kg)</th>
                           <th className="px-4 py-3 text-right font-semibold">Total valor</th>
                           <th className="px-4 py-3 font-semibold">Vendedor</th>
+                          <th className="px-4 py-3 text-right font-semibold">Acciones</th>
                         </tr>
                       ) : (
                         <tr>
@@ -883,6 +899,7 @@ export default function OrdenesPage() {
                           <th className="px-4 py-3 font-semibold">Destino</th>
                           <th className="px-4 py-3 text-right font-semibold">Ítems</th>
                           <th className="px-4 py-3 text-right font-semibold">Total (kg)</th>
+                          <th className="px-4 py-3 text-right font-semibold">Acciones</th>
                         </tr>
                       )}
                     </thead>
@@ -919,6 +936,13 @@ export default function OrdenesPage() {
                                 {g.totalValor > 0 ? fmtMoney(g.totalValor) : "—"}
                               </td>
                               <td className="px-4 py-3 text-[#45505e]">{g.vendedor ? tc(g.vendedor) : "—"}</td>
+                              <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                <AccionesOrden
+                                  onAsignar={() => setAsignarTarget(grupoAClienteSinReg(g))}
+                                  onCrear={() => setCrearTarget(grupoAClienteSinReg(g))}
+                                  onEliminar={() => setEliminarSinRegTarget(grupoAClienteSinReg(g))}
+                                />
+                              </td>
                             </>
                           ) : (
                             <>
@@ -941,6 +965,13 @@ export default function OrdenesPage() {
                               </td>
                               <td className="px-4 py-3 text-right tabular-nums text-[#14352a]">
                                 {g.totalKg.toFixed(2)}
+                              </td>
+                              <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                <AccionesOrden
+                                  onAsignar={() => setAsignarTarget(grupoAClienteSinReg(g))}
+                                  onCrear={() => setCrearTarget(grupoAClienteSinReg(g))}
+                                  onEliminar={() => setEliminarSinRegTarget(grupoAClienteSinReg(g))}
+                                />
                               </td>
                             </>
                           )}
@@ -1345,6 +1376,40 @@ export default function OrdenesPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Acciones por orden (asignar / crear / eliminar) ───────────────────────────
+function AccionesOrden({
+  onAsignar,
+  onCrear,
+  onEliminar,
+}: {
+  onAsignar: () => void;
+  onCrear: () => void;
+  onEliminar: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-end gap-1.5">
+      <button
+        onClick={onAsignar}
+        className="rounded-lg border border-[#dfe4e0] bg-white px-2.5 py-1 text-xs font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]"
+      >
+        Asignar
+      </button>
+      <button
+        onClick={onCrear}
+        className="rounded-lg border border-[#cfe4d6] bg-[#eef7ea] px-2.5 py-1 text-xs font-medium text-[#2f8f4e] transition-colors hover:bg-[#e2f0dc]"
+      >
+        Crear
+      </button>
+      <button
+        onClick={onEliminar}
+        className="rounded-lg border border-[#f0c4c1] bg-[#fbeceb] px-2.5 py-1 text-xs font-medium text-[#b3261e] transition-colors hover:bg-[#f7dcda]"
+      >
+        Eliminar
+      </button>
     </div>
   );
 }
