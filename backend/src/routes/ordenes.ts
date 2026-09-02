@@ -739,13 +739,17 @@ router.post(
       }
 
       const ordenes = (tipo === "I" ? parseOrdenesInversiones(req.file.buffer) : parseOrdenes(req.file.buffer));
-      // Órdenes sin número de orden ("sin código") no se suben.
-      const sinCodigo = ordenes.filter((o) => !o.numeroOrden.trim()).length;
-      const ordenesConCodigo = ordenes
-        .filter((o) => o.numeroOrden.trim())
-        .map((o) => ({ ...o, numeroOrden: tipo + o.numeroOrden }));
+      // Bovino/Porcino traen columna CÓDIGO; sin código la orden no se sube.
+      const exigeCodigo = tipo === "B" || tipo === "P";
+      const conNumero = ordenes.filter((o) => o.numeroOrden.trim());
+      const validas = exigeCodigo
+        ? conNumero.filter((o) => String(o.codigo ?? "").trim() !== "")
+        : conNumero;
+      // Órdenes omitidas por no tener código.
+      const sinCodigo = conNumero.length - validas.length;
+      const ordenesConCodigo = validas.map((o) => ({ ...o, numeroOrden: tipo + o.numeroOrden }));
       if (ordenesConCodigo.length === 0) {
-        throw new HttpError(400, "El archivo no contiene órdenes válidas");
+        throw new HttpError(400, "El archivo no contiene órdenes con código válido");
       }
 
       // Cruza con los PODs de Drivin para marcar las entregadas.

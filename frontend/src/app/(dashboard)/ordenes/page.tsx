@@ -332,7 +332,7 @@ export default function OrdenesPage() {
         await importOrdenes(file, tipo);
       setMessage(
         `Se importaron ${importados}: ${entregados} entregadas, ${rechazados} rechazadas, ${pendientes} pendientes.` +
-          (sinCodigo ? ` ${sinCodigo} clientes sin código no guardados por falta de información.` : "")
+          (sinCodigo ? ` Se omitieron ${sinCodigo} ${sinCodigo === 1 ? "orden" : "órdenes"} sin código.` : "")
       );
       await load();
     } catch (err) {
