@@ -476,8 +476,20 @@ export default function OrdenesPage() {
       });
       if (found) { setEditTatTarget(found); return; }
     } else {
-      const cod = codigoPorClave.get(claveCD(g.cliente, g.destino));
-      const found = clientesDb.find((c) => !!cod && c.codigoDireccion === cod);
+      // Busca el cliente GS por código resuelto, código de la orden o por nombre:
+      // si existe, se abre en modo editar; si no, se ofrece crearlo.
+      const cod =
+        codigoPorClave.get(claveCD(g.clienteAsignado ?? g.cliente, g.destino)) ??
+        codigoPorClave.get(claveCD(g.cliente, g.destino)) ??
+        g.codigo ??
+        undefined;
+      const nombreClave = claveCD(g.clienteAsignado ?? g.cliente, "");
+      const found = clientesDb.find(
+        (c) =>
+          (!!cod && c.codigoDireccion === cod) ||
+          claveCD(c.cliente ?? "", "") === nombreClave ||
+          claveCD(c.nombreDireccion ?? "", "") === nombreClave
+      );
       if (found) { setEditGsTarget(found); return; }
     }
     setCrearTarget(grupoAClienteSinReg(g));
@@ -986,7 +998,8 @@ export default function OrdenesPage() {
                           ? g.codigo
                           : (g.sobrescritoConcatenado && g.codigo) ||
                             codigoPorClave.get(claveCD(g.clienteAsignado ?? g.cliente, g.destino)) ||
-                            codigoPorClave.get(claveCD(g.cliente, g.destino));
+                            codigoPorClave.get(claveCD(g.cliente, g.destino)) ||
+                            g.codigo;
                         return (
                         <tr
                           key={g.key}
