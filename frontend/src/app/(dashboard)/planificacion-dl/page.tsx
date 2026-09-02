@@ -379,6 +379,23 @@ export default function PlanificacionDLPage() {
       .map((o) => o.id);
   }
 
+  // Suma de kg de un conjunto de órdenes (para saber cuánto pesa una remisión).
+  const kgDeIds = (ids: string[]): number => {
+    const set = new Set(ids);
+    return ordenes.filter((o) => set.has(o.id)).reduce((s, o) => s + o.cantidadKg, 0);
+  };
+
+  // Capacidad de un vehículo y si una remisión de `remKg` cabe (como en asignación).
+  function capacidadVehiculo(v: VehiculoExterno, remKg: number) {
+    const d = despachos.find((x) => x.placa.toUpperCase() === v.placa.toUpperCase());
+    const kgActual = d?.kilos ?? 0;
+    const capMax = parseFloat(v.capacidadReal ?? v.capacidad ?? "");
+    const tieneCap = Number.isFinite(capMax) && capMax > 0;
+    const cabe = !tieneCap || kgActual + remKg <= capMax;
+    const pct = tieneCap ? Math.round((kgActual / capMax) * 100) : null;
+    return { kgActual, capMax, tieneCap, cabe, pct };
+  }
+
   // Anula la planilla (soft-delete para trazabilidad) y libera/reasigna la carga
   async function resolverEliminacion(destino: "liberar" | string) {
     const p = eliminando;
@@ -460,29 +477,34 @@ export default function PlanificacionDLPage() {
     setLoadingAccion(true);
     setError(null);
     try {
-      // Si el destino es un vehículo con planilla ya impresa hoy, notificar que se anulará y recreará
+      // Si el destino ya tiene una planilla activa hoy, se anula y recrea para
+      // incluir la remisión (marcándola para reimpresión si ya estaba impresa).
       if (destino !== "liberar") {
-        const planillaImprDestinoHoy = planillasHoy.find(
-          (p) => p.placa.toUpperCase() === destino.toUpperCase() && !p.anulada && p.impresa
+        const planillaDestinoHoy = planillasHoy.find(
+          (p) => p.placa.toUpperCase() === destino.toUpperCase() && !p.anulada
         );
-        if (planillaImprDestinoHoy) {
-          // La planilla del destino está impresa — se anulará y recreará automáticamente
-          // Primero reasignar órdenes
+        if (planillaDestinoHoy) {
+          // Primero reasignar las órdenes al destino, luego recrear su planilla.
           await asignarOrdenes(eliminandoItem.ids, destino);
-          // Anular la planilla del destino (trigger automático de reimprimir)
-          await anularPlanilla(planillaImprDestinoHoy.id);
+          await anularPlanilla(planillaDestinoHoy.id);
           await addCambio({
             tipo: "movimiento",
             remision: eliminandoItem.numeroOrden,
             deVehiculo: eliminandoItem.vehiculoActual,
             aVehiculo: destino,
-            dlOrigen: planillaImprDestinoHoy.consecutivo,
-            detalle: "Remisión movida a vehículo con planilla impresa (reimprimir)",
+            dlOrigen: planillaDestinoHoy.consecutivo,
+            detalle: planillaDestinoHoy.impresa
+              ? "Remisión movida a vehículo con planilla impresa (reimprimir)"
+              : "Remisión movida a vehículo con planilla de hoy (recrear)",
           });
           refrescarCambios();
           setEliminandoItem(null);
           setDestinoItem("");
-          setMessage(`Remisión movida a ${destino}. La planilla ${dlLabel(planillaImprDestinoHoy.consecutivo)} fue anulada y se creó una nueva. Reimprimir.`);
+          setMessage(
+            planillaDestinoHoy.impresa
+              ? `Remisión movida a ${destino}. La planilla ${dlLabel(planillaDestinoHoy.consecutivo)} fue anulada y recreada. Reimprimir.`
+              : `Remisión movida a ${destino}. La planilla ${dlLabel(planillaDestinoHoy.consecutivo)} se actualizó para incluir la remisión.`
+          );
           await load();
           return;
         }
@@ -1028,24 +1050,58 @@ export default function PlanificacionDLPage() {
               </button>
               <div className="rounded-lg border border-[#dfe4e0] px-4 py-3">
                 <p className="mb-2 text-sm font-semibold text-[#14352a]">Pasar a otro vehículo</p>
-                <div className="flex items-center gap-2">
-                  <select value={destinoItem} onChange={(e) => setDestinoItem(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-[#dfe4e0] bg-white px-3 py-2 text-sm text-[#14352a] outline-none focus:border-[#2f8f4e] focus:ring-2 focus:ring-[#2f8f4e]/20">
-                    <option value="">Selecciona vehículo…</option>
-                    {vehiculos
-                      .filter((v) => v.placa.toUpperCase() !== eliminandoItem.vehiculoActual.toUpperCase())
-                      .map((v) => {
-                        const d = despachos.find((x) => x.placa.toUpperCase() === v.placa.toUpperCase());
-                        return (
-                          <option key={v.id} value={v.placa}>
-                            {v.placa} — {v.conductor ?? "Sin conductor"}{d ? ` (${d.docs}d · ${fmtKg(d.kilos)} kg)` : ""}
-                          </option>
-                        );
-                      })}
-                  </select>
-                  <button onClick={() => destinoItem && resolverEliminacionItem(destinoItem)} disabled={!destinoItem} className="shrink-0 whitespace-nowrap rounded-lg bg-[#2f8f4e] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#277a42] disabled:opacity-40">
-                    Pasar
-                  </button>
-                </div>
+                {(() => {
+                  const remKg = kgDeIds(eliminandoItem.ids);
+                  const candidatos = vehiculos.filter(
+                    (v) => v.placa.toUpperCase() !== eliminandoItem.vehiculoActual.toUpperCase()
+                  );
+                  const sel = candidatos.find((v) => v.placa === destinoItem);
+                  const selCap = sel ? capacidadVehiculo(sel, remKg) : null;
+                  const pctFinal = selCap && selCap.tieneCap
+                    ? Math.round(((selCap.kgActual + remKg) / selCap.capMax) * 100)
+                    : 0;
+                  return (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <select value={destinoItem} onChange={(e) => setDestinoItem(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-[#dfe4e0] bg-white px-3 py-2 text-sm text-[#14352a] outline-none focus:border-[#2f8f4e] focus:ring-2 focus:ring-[#2f8f4e]/20">
+                          <option value="">Selecciona vehículo…</option>
+                          {candidatos.map((v) => {
+                            const c = capacidadVehiculo(v, remKg);
+                            const info = c.tieneCap ? `${fmtKg(c.kgActual)}/${fmtKg(c.capMax)} kg · ${c.pct}%` : `${fmtKg(c.kgActual)} kg`;
+                            return (
+                              <option key={v.id} value={v.placa} disabled={!c.cabe}>
+                                {v.placa} — {v.conductor ?? "Sin conductor"} · {info}{!c.cabe ? " · SIN ESPACIO" : ""}
+                              </option>
+                            );
+                          })}
+                        </select>
+                        <button onClick={() => destinoItem && selCap?.cabe && resolverEliminacionItem(destinoItem)} disabled={!destinoItem || !selCap?.cabe} className="shrink-0 whitespace-nowrap rounded-lg bg-[#2f8f4e] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#277a42] disabled:opacity-40">
+                          Pasar
+                        </button>
+                      </div>
+                      <p className="mt-1.5 text-[11px] text-[#7a8794]">Esta remisión pesa {fmtKg(remKg)} kg. Solo se habilitan los vehículos con espacio.</p>
+                      {sel && selCap && (
+                        <div className="mt-2">
+                          {selCap.tieneCap ? (
+                            <>
+                              <div className="mb-1 flex items-center justify-between text-[11px]">
+                                <span className={selCap.cabe ? "font-medium text-[#2f8f4e]" : "font-medium text-[#b3261e]"}>
+                                  {selCap.cabe ? "Cabe" : "Sin espacio"} · quedaría en {pctFinal}%
+                                </span>
+                                <span className="text-[#7a8794]">{fmtKg(selCap.kgActual + remKg)}/{fmtKg(selCap.capMax)} kg</span>
+                              </div>
+                              <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#eef2ee]">
+                                <div className={`h-full ${selCap.cabe ? "bg-[#2f8f4e]" : "bg-[#b3261e]"}`} style={{ width: `${Math.min(100, pctFinal)}%` }} />
+                              </div>
+                            </>
+                          ) : (
+                            <p className="text-[11px] text-[#7a8794]">Este vehículo no tiene capacidad definida.</p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
             <button onClick={() => { setEliminandoItem(null); setDestinoItem(""); }} className="mt-3 w-full rounded-lg px-4 py-2 text-sm font-medium text-[#7a8794] transition-colors hover:bg-[#f4f6f3]">Cancelar</button>
