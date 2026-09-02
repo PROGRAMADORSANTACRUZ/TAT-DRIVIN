@@ -346,6 +346,9 @@ export interface Cliente {
   lat: string | null;
   lon: string | null;
   barrio: string | null;
+  manzana: string | null;
+  lote: string | null;
+  tipoVia: string | null;
   telefono: string | null;
   correo: string | null;
   puntoVenta: string | null;
@@ -430,6 +433,9 @@ export interface ClienteTat {
   descripcionSucursal: string | null;
   direccion1: string | null;
   barrio: string | null;
+  manzana: string | null;
+  lote: string | null;
+  tipoVia: string | null;
   ciudad: string | null;
   departamento: string | null;
   pais: string | null;

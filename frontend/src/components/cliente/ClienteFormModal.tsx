@@ -11,7 +11,7 @@ import {
   type ClienteTat,
 } from "@/lib/api";
 import { tc } from "@/lib/utils";
-import DireccionInput from "./DireccionInput";
+import DireccionInput, { TIPOS_VIA } from "./DireccionInput";
 import MapaDireccion from "./MapaDireccion";
 import CiudadInput from "./CiudadInput";
 import { departamentoDeCiudad } from "@/data/colombia";
@@ -26,6 +26,9 @@ interface Form {
   direccion: string;
   referencia: string;
   barrio: string;
+  manzana: string;
+  lote: string;
+  tipoVia: string;
   ciudad: string;
   departamento: string;
   telefono: string;
@@ -38,7 +41,8 @@ interface Form {
 }
 
 const VACIO: Form = {
-  codigo: "", nombre: "", direccion: "", referencia: "", barrio: "", ciudad: "",
+  codigo: "", nombre: "", direccion: "", referencia: "", barrio: "", manzana: "",
+  lote: "", tipoVia: "", ciudad: "",
   departamento: "", telefono: "", correo: "", puntoVenta: "", tipo: "Distribución",
   activo: true, lat: null, lng: null,
 };
@@ -56,6 +60,9 @@ function fromGS(c: Cliente): Form {
     direccion: c.direccion ?? "",
     referencia: c.referencia ?? "",
     barrio: c.barrio ?? "",
+    manzana: c.manzana ?? "",
+    lote: c.lote ?? "",
+    tipoVia: c.tipoVia ?? "",
     ciudad: c.comuna ?? "",
     departamento: c.provincia ?? "",
     telefono: c.telefono ?? "",
@@ -75,6 +82,9 @@ function fromTat(c: ClienteTat): Form {
     direccion: c.direccion1 ?? "",
     referencia: c.referencia ?? "",
     barrio: c.barrio ?? "",
+    manzana: c.manzana ?? "",
+    lote: c.lote ?? "",
+    tipoVia: c.tipoVia ?? "",
     ciudad: c.ciudad ?? "",
     departamento: c.departamento ?? "",
     telefono: c.telefono ?? c.celular ?? "",
@@ -162,6 +172,9 @@ export default function ClienteFormModal({
           descripcionSucursal: tat.descripcionSucursal,
           direccion1: form.direccion.trim() || null,
           barrio: form.barrio.trim() || null,
+          manzana: form.manzana.trim() || null,
+          lote: form.lote.trim() || null,
+          tipoVia: form.tipoVia.trim() || null,
           ciudad: form.ciudad.trim() || null,
           departamento: form.departamento.trim() || null,
           pais: tat.pais,
@@ -189,6 +202,9 @@ export default function ClienteFormModal({
           comuna: form.ciudad.trim() || null,
           provincia: form.departamento.trim() || null,
           barrio: form.barrio.trim() || null,
+          manzana: form.manzana.trim() || null,
+          lote: form.lote.trim() || null,
+          tipoVia: form.tipoVia.trim() || null,
           telefono: form.telefono.trim() || null,
           correo: form.correo.trim() || null,
           puntoVenta: form.puntoVenta.trim() || null,
@@ -281,6 +297,22 @@ export default function ClienteFormModal({
 
               <Bloque titulo="Dirección">
                 <DireccionInput value={form.direccion} onChange={(v) => set("direccion", v)} />
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <Campo label="Tipo de vía">
+                    <select value={form.tipoVia} onChange={(e) => set("tipoVia", e.target.value)} className={INPUT_CLS}>
+                      <option value="">—</option>
+                      {TIPOS_VIA.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </Campo>
+                  <Campo label="Manzana">
+                    <input value={form.manzana} onChange={(e) => set("manzana", e.target.value)} placeholder="Ej. 5 / B" className={INPUT_CLS} />
+                  </Campo>
+                  <Campo label="Lote">
+                    <input value={form.lote} onChange={(e) => set("lote", e.target.value)} placeholder="Ej. 12" className={INPUT_CLS} />
+                  </Campo>
+                </div>
                 <div className="mt-3">
                   <Campo label="Referencia">
                     <input value={form.referencia} onChange={(e) => set("referencia", e.target.value)} placeholder="Ej. frente al parque, casa esquinera…" className={INPUT_CLS} />

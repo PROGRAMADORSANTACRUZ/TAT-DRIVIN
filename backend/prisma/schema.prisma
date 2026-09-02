@@ -134,6 +134,9 @@ model Cliente {
   lat             String?
   lon             String?
   barrio          String?
+  manzana         String?
+  lote            String?
+  tipoVia         String?
   telefono        String?
   correo          String?
   puntoVenta      String?
@@ -155,6 +158,9 @@ model ClienteTat {
   descripcionSucursal String?
   direccion1          String?
   barrio              String?
+  manzana             String?
+  lote                String?
+  tipoVia             String?
   ciudad              String?
   departamento        String?
   pais                String?

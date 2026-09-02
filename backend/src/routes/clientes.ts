@@ -120,7 +120,7 @@ const CAMPOS: { key: keyof ClienteRow; header: string }[] = [
 ];
 
 // Campos string extra (editables desde el modal, no vienen del Excel).
-const CAMPOS_EXTRA = ["barrio", "telefono", "correo", "puntoVenta", "tipo"] as const;
+const CAMPOS_EXTRA = ["barrio", "manzana", "lote", "tipoVia", "telefono", "correo", "puntoVenta", "tipo"] as const;
 
 interface ClienteRow {
   codigoDireccion: string;
