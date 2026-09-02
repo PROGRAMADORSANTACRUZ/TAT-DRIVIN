@@ -939,7 +939,6 @@ export default function OrdenesPage() {
                               <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                                 <AccionesOrden
                                   onAsignar={() => setAsignarTarget(grupoAClienteSinReg(g))}
-                                  onCrear={() => setCrearTarget(grupoAClienteSinReg(g))}
                                   onEliminar={() => setEliminarSinRegTarget(grupoAClienteSinReg(g))}
                                 />
                               </td>
@@ -969,7 +968,6 @@ export default function OrdenesPage() {
                               <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                                 <AccionesOrden
                                   onAsignar={() => setAsignarTarget(grupoAClienteSinReg(g))}
-                                  onCrear={() => setCrearTarget(grupoAClienteSinReg(g))}
                                   onEliminar={() => setEliminarSinRegTarget(grupoAClienteSinReg(g))}
                                 />
                               </td>
@@ -1380,14 +1378,12 @@ export default function OrdenesPage() {
   );
 }
 
-// ── Acciones por orden (asignar / crear / eliminar) ───────────────────────────
+// ── Acciones por orden (asignar / eliminar) ───────────────────────────────────
 function AccionesOrden({
   onAsignar,
-  onCrear,
   onEliminar,
 }: {
   onAsignar: () => void;
-  onCrear: () => void;
   onEliminar: () => void;
 }) {
   return (
@@ -1397,12 +1393,6 @@ function AccionesOrden({
         className="rounded-lg border border-[#dfe4e0] bg-white px-2.5 py-1 text-xs font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]"
       >
         Asignar
-      </button>
-      <button
-        onClick={onCrear}
-        className="rounded-lg border border-[#cfe4d6] bg-[#eef7ea] px-2.5 py-1 text-xs font-medium text-[#2f8f4e] transition-colors hover:bg-[#e2f0dc]"
-      >
-        Crear
       </button>
       <button
         onClick={onEliminar}
