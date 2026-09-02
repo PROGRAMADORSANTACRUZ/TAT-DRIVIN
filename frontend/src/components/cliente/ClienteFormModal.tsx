@@ -272,13 +272,18 @@ export default function ClienteFormModal({
                     Cliente activo
                   </label>
                   <Campo label="Nombre / Razón social *" full>
-                    <input value={form.nombre} onChange={(e) => set("nombre", tc(e.target.value))} className={INPUT_CLS} />
+                    <input value={form.nombre} onChange={(e) => set("nombre", e.target.value)} onBlur={(e) => set("nombre", tc(e.target.value))} className={INPUT_CLS} />
                   </Campo>
                 </div>
               </Bloque>
 
               <Bloque titulo="Dirección">
                 <DireccionInput value={form.direccion} onChange={(v) => set("direccion", v)} />
+                <div className="mt-3">
+                  <Campo label="Referencia">
+                    <input value={form.referencia} onChange={(e) => set("referencia", e.target.value)} placeholder="Ej. frente al parque, casa esquinera…" className={INPUT_CLS} />
+                  </Campo>
+                </div>
               </Bloque>
 
               <Bloque titulo="Contacto">
@@ -355,13 +360,13 @@ export default function ClienteFormModal({
               <Bloque titulo="Barrio y ciudad">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Campo label="Barrio">
-                    <input value={form.barrio} onChange={(e) => set("barrio", tc(e.target.value))} placeholder="Barrio" className={INPUT_CLS} />
+                    <input value={form.barrio} onChange={(e) => set("barrio", e.target.value)} onBlur={(e) => set("barrio", tc(e.target.value))} placeholder="Barrio" className={INPUT_CLS} />
                   </Campo>
                   <Campo label="Ciudad">
-                    <input value={form.ciudad} onChange={(e) => set("ciudad", tc(e.target.value))} placeholder="Ciudad" className={INPUT_CLS} />
+                    <input value={form.ciudad} onChange={(e) => set("ciudad", e.target.value)} onBlur={(e) => set("ciudad", tc(e.target.value))} placeholder="Ciudad" className={INPUT_CLS} />
                   </Campo>
                   <Campo label="Departamento" full>
-                    <input value={form.departamento} onChange={(e) => set("departamento", tc(e.target.value))} placeholder="Departamento" className={INPUT_CLS} />
+                    <input value={form.departamento} onChange={(e) => set("departamento", e.target.value)} onBlur={(e) => set("departamento", tc(e.target.value))} placeholder="Departamento" className={INPUT_CLS} />
                   </Campo>
                 </div>
               </Bloque>
