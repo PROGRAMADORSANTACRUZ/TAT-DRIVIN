@@ -1242,11 +1242,16 @@ router.delete("/", requireAuth, async (req, res, next) => {
     let where: {
       distribucion?: string;
       numeroOrden?: { startsWith: string };
+      tatOrigen?: string;
     } = {};
     if (tipo === "B" || tipo === "P" || tipo === "I") {
       where = { distribucion: "AGROPECUARIA", numeroOrden: { startsWith: tipo } };
     } else if (tipo === "AGRO") {
       where = { distribucion: "AGROPECUARIA" };
+    } else if (tipo === "TATAGRO") {
+      where = { distribucion: "TAT", tatOrigen: "AGROPECUARIA" };
+    } else if (tipo === "TATINV") {
+      where = { distribucion: "TAT", tatOrigen: "INVERSIONES" };
     } else if (tipo === "TAT") {
       where = { distribucion: "TAT" };
     } else {

@@ -282,7 +282,7 @@ export function syncOrdenesTat(
 }
 
 export function deleteOrdenes(
-  tipo?: "B" | "P" | "I" | "AGRO" | "TAT"
+  tipo?: "B" | "P" | "I" | "AGRO" | "TAT" | "TATAGRO" | "TATINV"
 ): Promise<{ eliminados: number }> {
   const qs = tipo ? `?tipo=${tipo}` : "";
   return request<{ eliminados: number }>(`/api/ordenes${qs}`, {

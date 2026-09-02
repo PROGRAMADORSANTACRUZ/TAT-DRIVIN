@@ -189,6 +189,12 @@ const CATEGORIES = [
   },
 ];
 
+// Tipo de borrado por card (respeta el origen TAT: Agropecuaria vs Inversiones).
+function catDeleteTipo(cat: (typeof CATEGORIES)[number]): "B" | "P" | "I" | "TATAGRO" | "TATINV" {
+  if (!cat.isTat) return cat.tipo as "B" | "P" | "I";
+  return cat.syncOrigen === "INVERSIONES" ? "TATINV" : "TATAGRO";
+}
+
 function getOrdenesForCategory(ordenes: Orden[], cat: CategoryId): Orden[] {
   switch (cat) {
     case "BOVINO":
@@ -269,6 +275,7 @@ export default function OrdenesPage() {
   const [deleting, setDeleting] = useState(false);
   const [syncingTat, setSyncingTat] = useState(false);
   const [eliminarModalOpen, setEliminarModalOpen] = useState(false);
+  const [borrarCard, setBorrarCard] = useState<(typeof CATEGORIES)[number] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<CategoryId | null>(null);
@@ -347,7 +354,7 @@ export default function OrdenesPage() {
     fileInputRef.current?.click();
   }
 
-  async function handleDelete(tipo?: "B" | "P" | "I" | "TAT") {
+  async function handleDelete(tipo?: "B" | "P" | "I" | "AGRO" | "TAT" | "TATAGRO" | "TATINV") {
     setEliminarModalOpen(false);
     setDeleting(true);
     setError(null);
@@ -358,6 +365,8 @@ export default function OrdenesPage() {
         tipo === "B" ? "Bovino" :
         tipo === "P" ? "Porcino" :
         tipo === "I" ? "Inversiones" :
+        tipo === "TATAGRO" ? "TAT Agropecuaria" :
+        tipo === "TATINV" ? "TAT Inversiones" :
         tipo === "TAT" ? "facturas TAT" : "todas";
       setMessage(`Se eliminaron ${eliminados} órdenes${tipo ? ` (${label})` : ""}.`);
       await load();
@@ -665,17 +674,31 @@ export default function OrdenesPage() {
                             <path d="M5 12h14M12 5l7 7-7 7" />
                           </svg>
                         </span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (cat.isTat && cat.syncOrigen) handleSyncTat(cat.syncOrigen);
-                            else if (cat.tipo) triggerImport(cat.tipo);
-                          }}
-                          disabled={importing || syncingTat}
-                          className="rounded-lg border border-[#e1e9dd] px-3.5 py-2 text-xs font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]"
-                        >
-                          {cat.isTat ? "Sincronizar" : "Importar"}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBorrarCard(cat);
+                            }}
+                            disabled={deleting}
+                            title="Eliminar órdenes de esta card"
+                            aria-label="Eliminar órdenes"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#f0c4c1] bg-[#fbeceb] text-[#b3261e] transition-colors hover:bg-[#f7dcda] disabled:opacity-60"
+                          >
+                            <IconTrash />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (cat.isTat && cat.syncOrigen) handleSyncTat(cat.syncOrigen);
+                              else if (cat.tipo) triggerImport(cat.tipo);
+                            }}
+                            disabled={importing || syncingTat}
+                            className="rounded-lg border border-[#e1e9dd] px-3.5 py-2 text-xs font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]"
+                          >
+                            {cat.isTat ? "Sincronizar" : "Importar"}
+                          </button>
+                        </div>
                       </div>
                     </>
                   ) : (
@@ -1067,9 +1090,7 @@ export default function OrdenesPage() {
                 Cancelar
               </button>
               <button
-                onClick={() =>
-                  handleDelete(activeCat.isTat ? "TAT" : activeCat.tipo ?? undefined)
-                }
+                onClick={() => handleDelete(catDeleteTipo(activeCat))}
                 className="rounded-lg bg-[#b3261e] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#9b1e18]"
               >
                 Eliminar
@@ -1409,6 +1430,54 @@ export default function OrdenesPage() {
             load();
           }}
         />
+      )}
+
+      {/* Modal: confirmar eliminación de todas las órdenes de una card */}
+      {borrarCard && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => !deleting && setBorrarCard(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 p-5">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fbeceb] text-[#b3261e]">
+                <IconTrash />
+              </span>
+              <div>
+                <h3 className="text-base font-semibold text-[#14352a]">
+                  Eliminar órdenes de {borrarCard.label}
+                </h3>
+                <p className="mt-1 text-sm text-[#5f7a68]">
+                  ¿Seguro que deseas eliminar <span className="font-semibold text-[#14352a]">todas las órdenes cargadas</span> de{" "}
+                  <span className="font-semibold text-[#14352a]">{borrarCard.label}</span>? Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-[#eceef0] px-5 py-3">
+              <button
+                onClick={() => setBorrarCard(null)}
+                disabled={deleting}
+                className="rounded-lg border border-[#dfe4e0] px-4 py-2.5 text-sm font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3] disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  const t = catDeleteTipo(borrarCard);
+                  setBorrarCard(null);
+                  handleDelete(t);
+                }}
+                disabled={deleting}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#b3261e] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#9a2019] disabled:opacity-60"
+              >
+                {deleting ? "Eliminando…" : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal: confirmar eliminación de órdenes de un cliente sin registrar */}
