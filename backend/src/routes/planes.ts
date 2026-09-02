@@ -233,20 +233,25 @@ async function buildScenarioPayload(opts: {
     const city = asignado?.ciudad || geo?.ciudad || clienteGS || destino;
     const orders = [];
     for (const [numeroOrden, lineas] of pedidos) {
-      const productMap = new Map<string, number>();
+      // Agrupa por producto: kg (unidad de medida 1) y n.º de líneas (unidades).
+      const productMap = new Map<string, { kg: number; unidades: number }>();
       for (const l of lineas) {
         const k = l.producto || "Sin descripción";
-        productMap.set(k, (productMap.get(k) ?? 0) + l.cantidadKg);
+        const cur = productMap.get(k) ?? { kg: 0, unidades: 0 };
+        cur.kg += l.cantidadKg;
+        cur.unidades += 1;
+        productMap.set(k, cur);
       }
-      const items = Array.from(productMap.entries()).map(([desc, kg], i) => ({
+      const items = Array.from(productMap.entries()).map(([desc, { kg, unidades }], i) => ({
         code: `${numeroOrden}-${i + 1}`,
         description: desc,
-        units: 1,
+        units: unidades,
         units_1: Math.round(kg * 100) / 100,
       }));
       orders.push({
         code: numeroOrden,
         alt_code: `${normKey(cliente)}-${normKey(destino)}`,
+        units: lineas.length,
         units_1: Math.round(lineas.reduce((s, l) => s + l.cantidadKg, 0) * 100) / 100,
         vehicle_code: lineas[0].asignadoVehiculo,
         items,
