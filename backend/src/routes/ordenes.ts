@@ -914,14 +914,18 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
     );
     const clientes = await prisma.clienteTat.findMany({
       where: { nit: { in: nits }, eliminado: false },
-      select: { nit: true, direccion1: true, codigoTercero: true },
+      select: { nit: true, direccion1: true, codigoTercero: true, vendedor: true },
     });
     const dirPorNit = new Map<string, string>();
     const codigoPorNit = new Map<string, string>();
+    const vendedorPorNit = new Map<string, string>();
     for (const c of clientes) {
       if (!c.nit) continue;
       if (c.codigoTercero && !codigoPorNit.has(c.nit)) {
         codigoPorNit.set(c.nit, c.codigoTercero);
+      }
+      if (c.vendedor && !vendedorPorNit.has(c.nit)) {
+        vendedorPorNit.set(c.nit, c.vendedor.trim());
       }
       const dir = (c.direccion1 ?? "").trim();
       if (dir && esDireccionTatValida(dir)) {
@@ -951,6 +955,7 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
           nit: nit || null,
           codigo: codigoPorNit.get(nit) ?? null,
           direccion,
+          vendedor: vendedorPorNit.get(nit) ?? null,
           valor: Number(f.valor_subtotal) || 0,
           estado: "Pendiente",
           distribucion: "TAT",

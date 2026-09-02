@@ -226,6 +226,7 @@ export interface Orden {
   codigo: string | null;
   valor: number;
   direccion: string | null;
+  vendedor: string | null;
   reenviado: boolean;
   reenviadoAt: string | null;
   asignadoVehiculo: string | null;

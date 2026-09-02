@@ -54,6 +54,8 @@ type OrdenGrupo = {
   totalValor: number;
   distribucion: string;
   tatOrigen: string | null;
+  direccion: string | null;
+  vendedor: string | null;
 };
 
 function agrupar(ordenes: Orden[]): OrdenGrupo[] {
@@ -78,12 +80,16 @@ function agrupar(ordenes: Orden[]): OrdenGrupo[] {
         totalValor: 0,
         distribucion: o.distribucion,
         tatOrigen: o.tatOrigen ?? null,
+        direccion: o.direccion ?? null,
+        vendedor: o.vendedor ?? null,
       };
       map.set(key, g);
     }
     g.items.push(o);
     g.totalKg += o.cantidadKg;
     g.totalValor += o.valor ?? 0;
+    if (!g.direccion && o.direccion) g.direccion = o.direccion;
+    if (!g.vendedor && o.vendedor) g.vendedor = o.vendedor;
     if (o.reenviado) {
       g.reenviado = true;
       if (o.reenviadoAt) g.reenviadoAt = o.reenviadoAt;
@@ -855,13 +861,13 @@ export default function OrdenesPage() {
                           <th className="px-4 py-3 font-semibold">#</th>
                           <th className="px-4 py-3 font-semibold">Fecha</th>
                           <th className="px-4 py-3 font-semibold">No. Orden</th>
-                          <th className="px-4 py-3 font-semibold">Cliente</th>
                           <th className="px-4 py-3 font-semibold">NIT</th>
-                          <th className="px-4 py-3 font-semibold">Código</th>
+                          <th className="px-4 py-3 font-semibold">Cliente</th>
                           <th className="px-4 py-3 font-semibold">Dirección</th>
                           <th className="px-4 py-3 text-right font-semibold">Ítems</th>
-                          <th className="px-4 py-3 text-right font-semibold">Total valor</th>
                           <th className="px-4 py-3 text-right font-semibold">Total (kg)</th>
+                          <th className="px-4 py-3 text-right font-semibold">Total valor</th>
+                          <th className="px-4 py-3 font-semibold">Vendedor</th>
                         </tr>
                       ) : (
                         <tr>
@@ -897,27 +903,19 @@ export default function OrdenesPage() {
                           </td>
                           {activeCat.isTat ? (
                             <>
-                              <td className="px-4 py-3 text-[#45505e]">{tc(g.cliente) || "—"}</td>
                               <td className="whitespace-nowrap px-4 py-3 text-[#45505e]">{g.nit || "—"}</td>
-                              <td className="px-4 py-3">
-                                {codigo ? (
-                                  <span className="inline-flex rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">
-                                    {codigo}
-                                  </span>
-                                ) : (
-                                  <span className="text-xs text-[#c47f1a]">Sin código</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-[#45505e]">{tc(g.destino) || "—"}</td>
+                              <td className="px-4 py-3 text-[#45505e]">{tc(g.cliente) || "—"}</td>
+                              <td className="px-4 py-3 text-[#45505e]">{dirLimpia(g.direccion) ? tc(dirLimpia(g.direccion)) : "—"}</td>
                               <td className="px-4 py-3 text-right tabular-nums text-[#45505e]">
                                 {consolidarProductos(g.items).length}
                               </td>
                               <td className="px-4 py-3 text-right tabular-nums text-[#14352a]">
-                                {g.totalValor > 0 ? fmtMoney(g.totalValor) : "—"}
-                              </td>
-                              <td className="px-4 py-3 text-right tabular-nums text-[#14352a]">
                                 {g.totalKg.toFixed(2)}
                               </td>
+                              <td className="px-4 py-3 text-right tabular-nums text-[#14352a]">
+                                {g.totalValor > 0 ? fmtMoney(g.totalValor) : "—"}
+                              </td>
+                              <td className="px-4 py-3 text-[#45505e]">{g.vendedor ? tc(g.vendedor) : "—"}</td>
                             </>
                           ) : (
                             <>

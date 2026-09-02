@@ -82,6 +82,9 @@ model Orden {
   // Dirección real del cliente (columna DIRECCIÓN del Excel o dirección TAT).
   direccion String?
 
+  // Vendedor asignado al cliente (del maestro TAT; null en Agropecuaria).
+  vendedor String?
+
   // Distribución a la que pertenece la orden: "AGROPECUARIA" (Excel) o "TAT" (API).
   distribucion String  @default("AGROPECUARIA")
 
