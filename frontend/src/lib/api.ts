@@ -235,6 +235,7 @@ export interface Orden {
   createdAt: string;
   // Cliente enrutado por concatenado (NIT) hacia otro cliente distinto al del Excel.
   clienteOriginal?: string;
+  clienteAsignado?: string;
   sobrescritoConcatenado?: boolean;
 }
 

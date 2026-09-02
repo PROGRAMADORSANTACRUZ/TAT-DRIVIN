@@ -233,6 +233,20 @@ router.post("/:id/consecutivo", requireAuth, requirePermiso("/configuracion/clie
     if (!nuevo) throw new HttpError(400, "El consecutivo es obligatorio");
     const current = await prisma.cliente.findUnique({ where: { id } });
     if (!current) throw new HttpError(404, "Cliente no encontrado");
+    // Un consecutivo pertenece a un solo cliente: se quita de los demás para que
+    // el recién asignado sea el que sobrescribe (prioridad sobre el del Excel).
+    const otros = await prisma.cliente.findMany({
+      where: { id: { not: id }, consecutivos: { contains: nuevo } },
+      select: { id: true, consecutivos: true },
+    });
+    for (const c of otros) {
+      let l: string[] = [];
+      try { l = c.consecutivos ? (JSON.parse(c.consecutivos) as string[]) : []; } catch { l = []; }
+      const filtrada = l.filter((x) => x.toUpperCase() !== nuevo.toUpperCase());
+      if (filtrada.length !== l.length) {
+        await prisma.cliente.update({ where: { id: c.id }, data: { consecutivos: JSON.stringify(filtrada) } });
+      }
+    }
     const lista: string[] = current.consecutivos
       ? (JSON.parse(current.consecutivos) as string[])
       : [];

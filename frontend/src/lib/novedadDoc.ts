@@ -1,6 +1,11 @@
 // Genera el documento PDF de una Novedad de nivel de servicio (para imprimir/guardar).
 import type { Novedad } from "@/lib/api";
 
+// Base absoluta para que las URLs relativas (p. ej. /logo.png) resuelvan cuando
+// el documento se abre en una ventana about:blank vía document.write.
+const baseHref = (): string =>
+  typeof window !== "undefined" ? `<base href="${window.location.origin}/"/>` : "";
+
 function esc(s: unknown): string {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -27,7 +32,7 @@ export function docNovedad(n: Novedad): string {
       <td>${esc(valor) || "—"}</td>
     </tr>`;
 
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Novedad ${n.consecutivo}</title>
+  return `<!doctype html><html><head><meta charset="utf-8">${baseHref()}<title>Novedad ${n.consecutivo}</title>
   <style>
     * { box-sizing: border-box; }
     body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #14352a; margin: 0; padding: 28px; }

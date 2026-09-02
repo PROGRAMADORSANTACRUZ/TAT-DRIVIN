@@ -59,6 +59,8 @@ type OrdenGrupo = {
   direccion: string | null;
   vendedor: string | null;
   sobrescritoConcatenado: boolean;
+  clienteOriginal: string | null;
+  clienteAsignado: string | null;
 };
 
 function agrupar(ordenes: Orden[]): OrdenGrupo[] {
@@ -86,6 +88,8 @@ function agrupar(ordenes: Orden[]): OrdenGrupo[] {
         direccion: o.direccion ?? null,
         vendedor: o.vendedor ?? null,
         sobrescritoConcatenado: !!o.sobrescritoConcatenado,
+        clienteOriginal: o.clienteOriginal ?? null,
+        clienteAsignado: o.clienteAsignado ?? null,
       };
       map.set(key, g);
     }
@@ -130,7 +134,9 @@ const dirLimpia = (d: string | null | undefined): string => {
 // Convierte un grupo de orden al formato que usan los modales de asignar/crear/eliminar.
 function grupoAClienteSinReg(g: OrdenGrupo): ClienteSinRegistrar {
   return {
-    cliente: g.cliente,
+    // El consecutivo se arma con el cliente original del Excel, no con el
+    // nombre ya sobrescrito, para que la reasignación quede estable.
+    cliente: g.clienteOriginal ?? g.cliente,
     destino: g.destino,
     nit: g.nit,
     codigo: g.codigo,
@@ -978,7 +984,8 @@ export default function OrdenesPage() {
                       {pendientesGrupos.map((g, i) => {
                         const codigo = activeCat.isTat
                           ? g.codigo
-                          : codigoPorClave.get(claveCD(g.cliente, g.destino));
+                          : (g.sobrescritoConcatenado && g.codigo) ||
+                            codigoPorClave.get(claveCD(g.cliente, g.destino));
                         return (
                         <tr
                           key={g.key}
@@ -999,7 +1006,7 @@ export default function OrdenesPage() {
                                 {g.sobrescritoConcatenado && (
                                   <span className="block text-[10px] font-medium text-[#b5731e]">sobrescrito por concatenado</span>
                                 )}
-                                {tc(g.cliente) || "—"}
+                                {tc(g.clienteAsignado ?? g.cliente) || "—"}
                               </td>
                               <td className="px-4 py-3 text-[#45505e]">{dirLimpia(g.direccion) ? tc(dirLimpia(g.direccion)) : "—"}</td>
                               <td className="px-4 py-3 text-right tabular-nums text-[#45505e]">
@@ -1038,7 +1045,7 @@ export default function OrdenesPage() {
                                 {g.sobrescritoConcatenado && (
                                   <span className="block text-[10px] font-medium text-[#b5731e]">sobrescrito por concatenado</span>
                                 )}
-                                {g.cliente || "—"}
+                                {g.clienteAsignado || g.cliente || "—"}
                               </td>
                               <td className="px-4 py-3 text-[#45505e]">{g.destino || "—"}</td>
                               <td className="px-4 py-3 text-right tabular-nums text-[#45505e]">
@@ -1137,6 +1144,12 @@ export default function OrdenesPage() {
                 <p className="mt-0.5 text-sm text-[#5f7a68]">
                   {`${detalle.cliente} - ${detalle.destino}`} · {detalle.fecha}
                 </p>
+                {detalle.sobrescritoConcatenado && (
+                  <p className="mt-0.5 text-xs font-medium text-[#b5731e]">
+                    Cliente sobrescrito por concatenado
+                    {detalle.clienteOriginal ? ` (original: ${tc(detalle.clienteOriginal)})` : ""}
+                  </p>
+                )}
               </div>
               <button
                 onClick={() => setDetalle(null)}
@@ -1178,9 +1191,18 @@ export default function OrdenesPage() {
             </div>
 
             <div className="flex shrink-0 items-center justify-between border-t border-[#eceef0] px-6 py-4 text-sm">
-              <span className="text-[#5f7a68]">{detalle.items.length} líneas</span>
+              <button
+                onClick={() => {
+                  setAsignarTarget(grupoAClienteSinReg(detalle));
+                  setDetalle(null);
+                }}
+                className="inline-flex items-center gap-2 rounded-lg border border-[#dfe4e0] bg-white px-3.5 py-2 text-sm font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]"
+              >
+                <IconLink />
+                Cambiar cliente
+              </button>
               <span className="font-semibold text-[#14352a]">
-                Total: {detalle.totalKg.toFixed(2)} kg
+                {detalle.items.length} líneas · Total: {detalle.totalKg.toFixed(2)} kg
               </span>
             </div>
           </div>

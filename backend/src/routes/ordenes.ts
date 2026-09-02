@@ -444,36 +444,42 @@ router.get("/", requireAuth, async (req, res, next) => {
       if (!tatPorClave.has(key)) tatPorClave.set(key, info);
     }
 
-    // Sobrescribe cliente y dirección de cada orden con los del maestro (tiempo real).
+    // Sobrescribe (solo para la vista) el cliente por concatenado y refresca la dirección.
     const enriquecidas = ordenes.map((o) => {
-      // Ruteo explícito por NIT-concatenado: la orden se va con el cliente destino.
-      const rut = o.nit ? porNitConcat.get(claveCliente(o.nit)) : undefined;
-      if (rut) {
-        return {
-          ...o,
-          ...(rut.direccion ? { direccion: rut.direccion } : {}),
-          ...(rut.nombre ? { cliente: rut.nombre, clienteOriginal: o.cliente, sobrescritoConcatenado: true } : {}),
-          ...(rut.codigo ? { codigo: rut.codigo } : {}),
-        };
-      }
+      // Cliente al que el concatenado enruta la orden: por NIT (TAT) o por
+      // "cliente - destino"/"destino" (GS), agregado en OTRO cliente de la BD.
+      const asignado =
+        (o.nit ? porNitConcat.get(claveCliente(o.nit)) : undefined) ??
+        gsPorConsecutivo.get(claveCliente(`${o.cliente} - ${o.destino}`)) ??
+        gsPorConsecutivo.get(claveCliente(o.destino));
+      // Dirección del maestro en tiempo real (según la fuente que aplique).
       let info: MaestroInfo | undefined;
       if (o.distribucion === "TAT") {
         info =
           (o.codigo ? gsPorCodigo.get(o.codigo) : undefined) ??
-          gsPorConsecutivo.get(claveCliente(`${o.cliente} - ${o.destino}`)) ??
+          asignado ??
           (o.nit ? tatPorClave.get(o.nit) : undefined);
       } else {
-        info =
-          gsPorConsecutivo.get(claveCliente(`${o.cliente} - ${o.destino}`)) ??
-          gsPorConsecutivo.get(claveCliente(o.destino)) ??
-          (o.codigo ? gsPorCodigo.get(o.codigo) : undefined);
+        info = asignado ?? (o.codigo ? gsPorCodigo.get(o.codigo) : undefined);
       }
-      if (!info) return o;
-      // Solo se sobrescribe la dirección: el nombre se mantiene para no romper
-      // la clave cliente||destino que cruza con verificar-clientes.
+      const direccion = asignado?.direccion ?? info?.direccion;
+      // Solo VISTA: si el concatenado apunta a un cliente de nombre distinto, se
+      // muestra ese cliente (clienteAsignado) sin tocar la identidad (cliente/consecutivo).
+      const sobre =
+        !!asignado?.nombre &&
+        claveCliente(asignado.nombre) !== claveCliente(o.cliente);
+      if (!direccion && !sobre) return o;
       return {
         ...o,
-        ...(info.direccion ? { direccion: info.direccion } : {}),
+        ...(direccion ? { direccion } : {}),
+        ...(sobre
+          ? {
+              clienteAsignado: asignado!.nombre,
+              clienteOriginal: o.cliente,
+              sobrescritoConcatenado: true,
+              ...(asignado!.codigo ? { codigo: asignado!.codigo } : {}),
+            }
+          : {}),
       };
     });
 
@@ -690,7 +696,7 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
           : matchDrivinAddress(index, g.cliente, g.destino);
       if (match) {
         registrados.push({
-          cliente: rut?.nombre ?? g.cliente,
+          cliente: g.cliente,
           destino: g.destino,
           codigo: match.code ?? null,
           pedidos: g.pedidos.size,

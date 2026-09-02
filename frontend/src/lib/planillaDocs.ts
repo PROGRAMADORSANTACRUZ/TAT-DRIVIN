@@ -3,6 +3,11 @@
 import type { Planilla, PlanillaItem } from "@/lib/api";
 import { AUXILIARES, RUTAS } from "@/data/planillaConfig";
 
+// Base absoluta para que las URLs relativas (p. ej. /logo.png) resuelvan cuando
+// el documento se abre en una ventana about:blank vía document.write.
+const baseHref = (): string =>
+  typeof window !== "undefined" ? `<base href="${window.location.origin}/"/>` : "";
+
 const fmtKg = (n: number) =>
   n.toLocaleString("es-CO", { maximumFractionDigits: 2 });
 const fmtKgInt = (n: number) =>
@@ -132,7 +137,7 @@ function filasItems(items: PlanillaItem[]): string {
 // Documento 1: R.I — control y retorno de documentos.
 export function docRI(p: Planilla): string {
   const tel = telAuxiliar(p.auxiliarRuta);
-  return `<!doctype html><html><head><meta charset="utf-8"><title>R.I ${p.consecutivo}</title><style>${CSS}</style></head><body onload="setTimeout(function(){window.focus();window.print();},350)">
+  return `<!doctype html><html><head><meta charset="utf-8">${baseHref()}<title>R.I ${p.consecutivo}</title><style>${CSS}</style></head><body onload="setTimeout(function(){window.focus();window.print();},350)">
   <div class="page">
   ${encabezado(p)}
   <table style="margin-top:3px">
@@ -299,7 +304,7 @@ export function docRIT(p: Planilla): string {
 
   const chk = (t: string) => `${t} <span class="chk"></span>`;
 
-  return `<!doctype html><html><head><meta charset="utf-8"><title>R.I.T ${p.consecutivo}</title><style>${CSS}</style></head><body onload="setTimeout(function(){window.focus();window.print();},350)">
+  return `<!doctype html><html><head><meta charset="utf-8">${baseHref()}<title>R.I.T ${p.consecutivo}</title><style>${CSS}</style></head><body onload="setTimeout(function(){window.focus();window.print();},350)">
   <div class="page">
   ${encabezado(p)}
   <table style="margin-top:3px">
