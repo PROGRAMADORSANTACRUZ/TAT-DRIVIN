@@ -261,7 +261,7 @@ export default function MapaDireccion({
       )}
 
       {abierto && (
-        <div className="mt-2 overflow-hidden rounded-xl">
+        <div className="mt-2 isolate overflow-hidden rounded-xl">
           <MapaLeaflet
             lat={centroLat}
             lng={centroLng}
@@ -288,7 +288,7 @@ export default function MapaDireccion({
       )}
 
       {modalSug && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" onClick={() => setModalSug(false)}>
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/40 p-4" onClick={() => setModalSug(false)}>
           <div className="max-h-[80vh] w-full max-w-lg overflow-auto rounded-2xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
               <h4 className="text-sm font-semibold text-[#14352a]">Sugerencias de dirección</h4>
