@@ -13,6 +13,8 @@ import {
 import { tc } from "@/lib/utils";
 import DireccionInput from "./DireccionInput";
 import MapaDireccion from "./MapaDireccion";
+import CiudadInput from "./CiudadInput";
+import { departamentoDeCiudad } from "@/data/colombia";
 
 const INPUT_CLS =
   "w-full rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm text-[#14352a] outline-none transition focus:border-[#2f8f4e]";
@@ -363,10 +365,20 @@ export default function ClienteFormModal({
                     <input value={form.barrio} onChange={(e) => set("barrio", e.target.value)} onBlur={(e) => set("barrio", tc(e.target.value))} placeholder="Barrio" className={INPUT_CLS} />
                   </Campo>
                   <Campo label="Ciudad">
-                    <input value={form.ciudad} onChange={(e) => set("ciudad", e.target.value)} onBlur={(e) => set("ciudad", tc(e.target.value))} placeholder="Ciudad" className={INPUT_CLS} />
+                    <CiudadInput
+                      value={form.ciudad}
+                      onSelect={(ciudad, departamento) =>
+                        setForm((p) => ({ ...p, ciudad, departamento }))
+                      }
+                    />
                   </Campo>
                   <Campo label="Departamento" full>
-                    <input value={form.departamento} onChange={(e) => set("departamento", e.target.value)} onBlur={(e) => set("departamento", tc(e.target.value))} placeholder="Departamento" className={INPUT_CLS} />
+                    <input
+                      value={form.departamento}
+                      readOnly
+                      placeholder="Se completa al elegir la ciudad"
+                      className={`${INPUT_CLS} cursor-not-allowed bg-[#f4f6f3] text-[#7a8794]`}
+                    />
                   </Campo>
                 </div>
               </Bloque>
@@ -381,7 +393,7 @@ export default function ClienteFormModal({
                   lng={form.lng}
                   onUbicacion={(la, lo) => setForm((p) => ({ ...p, lat: la, lng: lo }))}
                   onBarrio={(b) => set("barrio", b)}
-                  onCiudad={(ci) => set("ciudad", ci)}
+                  onCiudad={(ci) => setForm((p) => ({ ...p, ciudad: ci, departamento: departamentoDeCiudad(ci) ?? p.departamento }))}
                 />
               </Bloque>
             </div>
