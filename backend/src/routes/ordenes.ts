@@ -374,54 +374,69 @@ router.get("/", requireAuth, async (req, res, next) => {
       }),
       prisma.clienteTat.findMany({
         where: { eliminado: false, editado: true, nit: { not: null } },
-        select: { nit: true, sucursal: true, direccion1: true },
+        select: { nit: true, sucursal: true, direccion1: true, razonSocial: true },
       }),
     ]);
 
-    // Dirección actual del maestro GS por consecutivo y por código (fuente de verdad editable).
-    const gsPorConsecutivo = new Map<string, string>();
-    const gsPorCodigo = new Map<string, string>();
+    // Datos actuales del maestro GS por consecutivo y por código (fuente de verdad editable).
+    type MaestroInfo = { nombre?: string; direccion?: string };
+    const gsPorConsecutivo = new Map<string, MaestroInfo>();
+    const gsPorCodigo = new Map<string, MaestroInfo>();
     for (const c of clientesGS) {
       const dir = (c.direccion ?? "").trim();
-      if (!dir) continue;
+      const nombre = (c.cliente ?? "").trim();
+      const info: MaestroInfo = {};
+      if (dir) info.direccion = dir;
+      if (nombre) info.nombre = nombre;
+      if (!info.direccion && !info.nombre) continue;
       if (c.codigoDireccion && !gsPorCodigo.has(c.codigoDireccion.trim())) {
-        gsPorCodigo.set(c.codigoDireccion.trim(), dir);
+        gsPorCodigo.set(c.codigoDireccion.trim(), info);
       }
       if (c.consecutivos) {
         try {
           for (const con of JSON.parse(c.consecutivos) as string[]) {
             const k = claveCliente(con);
-            if (k && !gsPorConsecutivo.has(k)) gsPorConsecutivo.set(k, dir);
+            if (k && !gsPorConsecutivo.has(k)) gsPorConsecutivo.set(k, info);
           }
         } catch { /* consecutivos inválidos */ }
       }
     }
-    // Dirección del maestro TAT (solo clientes editados) por NIT-sucursal.
-    const tatPorClave = new Map<string, string>();
+    // Datos del maestro TAT (solo clientes editados) por NIT-sucursal.
+    const tatPorClave = new Map<string, MaestroInfo>();
     for (const c of clientesTat) {
       const nit = String(c.nit ?? "").trim();
+      if (!nit) continue;
       const dir = (c.direccion1 ?? "").trim();
-      if (!nit || dir.length < 2 || NO_DIRECCION_TAT.has(dir.toUpperCase())) continue;
+      const nombre = (c.razonSocial ?? "").trim();
+      const info: MaestroInfo = {};
+      if (dir.length >= 2 && !NO_DIRECCION_TAT.has(dir.toUpperCase())) info.direccion = dir;
+      if (nombre) info.nombre = nombre;
+      if (!info.direccion && !info.nombre) continue;
       const suc = parseInt(String(c.sucursal ?? "").trim(), 10);
       const key = Number.isFinite(suc) ? `${nit}-${suc}` : nit;
-      if (!tatPorClave.has(key)) tatPorClave.set(key, dir);
+      if (!tatPorClave.has(key)) tatPorClave.set(key, info);
     }
 
-    // Sobrescribe la dirección de cada orden con la del maestro (datos en tiempo real).
+    // Sobrescribe cliente y dirección de cada orden con los del maestro (tiempo real).
     const enriquecidas = ordenes.map((o) => {
-      let dir: string | undefined;
+      let info: MaestroInfo | undefined;
       if (o.distribucion === "TAT") {
-        dir =
+        info =
           (o.codigo ? gsPorCodigo.get(o.codigo) : undefined) ??
           gsPorConsecutivo.get(claveCliente(`${o.cliente} - ${o.destino}`)) ??
           (o.nit ? tatPorClave.get(o.nit) : undefined);
       } else {
-        dir =
+        info =
           gsPorConsecutivo.get(claveCliente(`${o.cliente} - ${o.destino}`)) ??
           gsPorConsecutivo.get(claveCliente(o.destino)) ??
           (o.codigo ? gsPorCodigo.get(o.codigo) : undefined);
       }
-      return dir ? { ...o, direccion: dir } : o;
+      if (!info) return o;
+      return {
+        ...o,
+        ...(info.direccion ? { direccion: info.direccion } : {}),
+        ...(info.nombre ? { cliente: info.nombre } : {}),
+      };
     });
 
     res.json(enriquecidas);
