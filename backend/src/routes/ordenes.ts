@@ -9,6 +9,7 @@ import {
   fetchDrivinAddresses,
   buildAddressIndex,
   matchDrivinAddress,
+  type DrivinAddress,
 } from "../lib/drivinAddresses";
 
 const router = Router();
@@ -721,6 +722,84 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
   }
 });
 
+// Resolvedor de código de cliente (mismo criterio que /verificar-clientes):
+// dado (cliente, destino, nit) devuelve el código registrado o null si no existe.
+// driviOk = false cuando Drivin no respondió (para no descartar por falso negativo).
+async function construirResolverCodigo(): Promise<{
+  resolver: (cliente: string, destino: string, nit: string | null, codigo: string | null) => { code: string | null } | null;
+  driviOk: boolean;
+}> {
+  let addresses: DrivinAddress[] = [];
+  let driviOk = true;
+  try {
+    addresses = await fetchDrivinAddresses();
+  } catch {
+    driviOk = false;
+  }
+  const [clientesGS, clientesTat, clientesTatNit] = await Promise.all([
+    prisma.cliente.findMany({ select: { codigoDireccion: true, consecutivos: true } }),
+    prisma.clienteTat.findMany({
+      where: { eliminado: false, consecutivos: { not: null } },
+      select: { codigoTercero: true, consecutivos: true },
+    }),
+    prisma.clienteTat.findMany({
+      where: { eliminado: false, nit: { not: null } },
+      select: { nit: true, codigoTercero: true, sucursal: true },
+    }),
+  ]);
+
+  const index = buildAddressIndex(addresses);
+
+  const porNit = new Map<string, string | null>();
+  for (const c of clientesTatNit) {
+    const nit = String(c.nit ?? "").trim();
+    if (!nit) continue;
+    const suc = parseInt(String(c.sucursal ?? "").trim(), 10);
+    const key = Number.isFinite(suc) ? `${nit}-${suc}` : nit;
+    if (!porNit.has(key)) porNit.set(key, c.codigoTercero);
+    if (!porNit.has(nit)) porNit.set(nit, c.codigoTercero);
+  }
+
+  const porConsecutivo = new Map<string, string | null>();
+  const porNitConcat = new Map<string, string | null>();
+  const indexar = (consecutivos: string | null, code: string | null) => {
+    if (!consecutivos) return;
+    let lista: string[] = [];
+    try {
+      lista = JSON.parse(consecutivos) as string[];
+    } catch {
+      return;
+    }
+    for (const con of lista) {
+      const k = claveCliente(con);
+      if (!k) continue;
+      if (esConcatNit(k)) {
+        if (!porNitConcat.has(k)) porNitConcat.set(k, code);
+      } else if (!porConsecutivo.has(k)) {
+        porConsecutivo.set(k, code);
+      }
+    }
+  };
+  for (const c of clientesGS) indexar(c.consecutivos, c.codigoDireccion);
+  for (const c of clientesTat) indexar(c.consecutivos, c.codigoTercero);
+
+  const resolver = (cliente: string, destino: string, nit: string | null, codigo: string | null) => {
+    const rut = nit ? porNitConcat.get(claveCliente(nit)) : undefined;
+    if (rut !== undefined) return { code: rut };
+    const claveTat = codigo ?? nit ?? "";
+    const codigoNit = claveTat ? porNit.get(claveTat) : undefined;
+    if (codigoNit !== undefined) return { code: codigoNit };
+    const consecutivo = claveCliente(`${cliente} - ${destino}`);
+    const codigoManual =
+      porConsecutivo.get(consecutivo) ?? porConsecutivo.get(claveCliente(destino));
+    if (codigoManual) return { code: codigoManual };
+    const m = matchDrivinAddress(index, cliente, destino);
+    return m ? { code: m.code } : null;
+  };
+
+  return { resolver, driviOk };
+}
+
 // POST /api/ordenes/import  (multipart, campo "file")
 router.post(
   "/import",
@@ -739,17 +818,25 @@ router.post(
       }
 
       const ordenes = (tipo === "I" ? parseOrdenesInversiones(req.file.buffer) : parseOrdenes(req.file.buffer));
-      // Bovino/Porcino traen columna CÓDIGO; sin código la orden no se sube.
-      const exigeCodigo = tipo === "B" || tipo === "P";
       const conNumero = ordenes.filter((o) => o.numeroOrden.trim());
-      const validas = exigeCodigo
-        ? conNumero.filter((o) => String(o.codigo ?? "").trim() !== "")
-        : conNumero;
-      // Órdenes omitidas por no tener código.
-      const sinCodigo = conNumero.length - validas.length;
+      // Solo se suben órdenes cuyo cliente queda registrado (con código en Drivin/DB);
+      // las que saldrían "Sin código" no se guardan. Si Drivin no responde, no se filtra.
+      const { resolver, driviOk } = await construirResolverCodigo();
+      let validas = conNumero;
+      let sinCodigo = 0;
+      if (driviOk) {
+        const keep: typeof conNumero = [];
+        const omitidas = new Set<string>();
+        for (const o of conNumero) {
+          if (resolver(o.cliente, o.destino, o.nit ?? null, null)) keep.push(o);
+          else omitidas.add(o.numeroOrden);
+        }
+        validas = keep;
+        sinCodigo = omitidas.size;
+      }
       const ordenesConCodigo = validas.map((o) => ({ ...o, numeroOrden: tipo + o.numeroOrden }));
       if (ordenesConCodigo.length === 0) {
-        throw new HttpError(400, "El archivo no contiene órdenes con código válido");
+        throw new HttpError(400, "Ninguna orden del archivo tiene cliente registrado (con código)");
       }
 
       // Cruza con los PODs de Drivin para marcar las entregadas.
