@@ -1077,7 +1077,7 @@ export default function AsignacionVehiculosPage() {
           onClick={() => setVerAsignadas(false)}
         >
           <div
-            className="flex max-h-[85vh] w-full max-w-4xl flex-col rounded-2xl bg-white shadow-xl"
+            className="flex max-h-[88vh] w-full max-w-7xl flex-col rounded-2xl bg-white shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-[#eceef0] px-6 py-4">
@@ -1111,7 +1111,7 @@ export default function AsignacionVehiculosPage() {
             </div>
 
             <div className="nice-scroll min-h-0 flex-1 overflow-auto">
-              <table className="w-full table-fixed text-left text-sm">
+              <table className="w-full min-w-[1100px] table-auto text-left text-sm">
                 <thead className="sticky top-0 z-10 border-b border-[#eceef0] bg-[#f7faf5] text-xs uppercase tracking-wide text-[#7a8794]">
                   <tr>
                     <th className="w-10 px-3 py-2.5">
@@ -1168,9 +1168,9 @@ export default function AsignacionVehiculosPage() {
                           <span className="inline-flex rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">Distribución</span>
                         )}
                       </td>
-                      <td className="truncate px-3 py-2 text-[#45505e]" title={tc(g.clienteAsignado ?? g.cliente)}>{tc(g.clienteAsignado ?? g.cliente) || "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-[#45505e]" title={tc(g.clienteAsignado ?? g.cliente)}>{tc(g.clienteAsignado ?? g.cliente) || "—"}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-[#45505e]">{esTat ? (g.nit || "—") : "—"}</td>
-                      <td className="truncate px-3 py-2 text-[#45505e]" title={dir ? tc(dir) : tc(g.destino)}>{dir ? tc(dir) : (esTat ? "—" : tc(g.destino))}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-[#45505e]" title={dir ? tc(dir) : tc(g.destino)}>{dir ? tc(dir) : (esTat ? "—" : tc(g.destino))}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-[#14352a]">{g.totalKg.toFixed(2)}</td>
                       <td className="px-3 py-2">
                         <span className="inline-flex rounded-full bg-[#e6effb] px-2.5 py-0.5 text-xs font-medium text-[#1a5fb4]">{g.asignado}</span>

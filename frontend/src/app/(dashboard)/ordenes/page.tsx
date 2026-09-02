@@ -7,6 +7,7 @@ import ClienteFormModal from "@/components/cliente/ClienteFormModal";
 import {
   ApiError,
   asignarConsecutivo,
+  asignarConsecutivoTat,
   cruzarConsecutivosAuto,
   deleteOrdenes,
   eliminarOrdenesPorIds,
@@ -448,7 +449,7 @@ export default function OrdenesPage() {
     }
   }
 
-  async function handleAsignar(clienteId: string) {
+  async function handleAsignar(tipo: "GS" | "TAT", clienteId: string) {
     if (!asignarTarget) return;
     // TAT: el concatenado es el NIT-sucursal (ruteo por NIT, prioridad sobre el Excel).
     const consecutivo =
@@ -456,7 +457,8 @@ export default function OrdenesPage() {
         ? asignarTarget.nit
         : `${asignarTarget.cliente} - ${asignarTarget.destino}`;
     try {
-      await asignarConsecutivo(clienteId, consecutivo);
+      if (tipo === "TAT") await asignarConsecutivoTat(clienteId, consecutivo);
+      else await asignarConsecutivo(clienteId, consecutivo);
       setMessage(`Consecutivo asignado. Actualizando verificación…`);
       setAsignarTarget(null);
       await load();
@@ -1417,6 +1419,7 @@ export default function OrdenesPage() {
         <AsignarClienteModal
           target={asignarTarget}
           clientes={clientesDb}
+          clientesTat={clientesTatDb}
           onClose={() => setAsignarTarget(null)}
           onAsignar={handleAsignar}
         />
@@ -1627,27 +1630,68 @@ function AccionesOrden({
 }
 
 // ── Modal: asignar el consecutivo a un cliente existente ──────────────────────
+type ClienteAsignable = {
+  key: string;
+  id: string;
+  tipo: "GS" | "TAT";
+  nombre: string;
+  direccion: string;
+  codigo: string | null;
+};
+
 function AsignarClienteModal({
   target,
   clientes,
+  clientesTat,
   onClose,
   onAsignar,
 }: {
   target: ClienteSinRegistrar;
   clientes: Cliente[];
+  clientesTat: ClienteTat[];
   onClose: () => void;
-  onAsignar: (clienteId: string) => Promise<void>;
+  onAsignar: (tipo: "GS" | "TAT", clienteId: string) => Promise<void>;
 }) {
   const [buscar, setBuscar] = useState("");
   const [asignandoId, setAsignandoId] = useState<string | null>(null);
+
+  // Lista unificada: todos los clientes GS (Distribución) + TAT.
+  const todos: ClienteAsignable[] = [
+    ...clientes.map((c) => ({
+      key: `gs-${c.id}`,
+      id: c.id,
+      tipo: "GS" as const,
+      nombre: c.cliente || c.nombreDireccion || "—",
+      direccion: c.direccion || c.nombreDireccion || "",
+      codigo: c.codigoDireccion,
+    })),
+    ...clientesTat.map((c) => {
+      const suc = parseInt(String(c.sucursal ?? ""), 10);
+      const base = c.codigoTercero ?? c.nit;
+      const codigo = base
+        ? Number.isFinite(suc)
+          ? `${base}-${suc}`
+          : base
+        : null;
+      return {
+        key: `tat-${c.id}`,
+        id: c.id,
+        tipo: "TAT" as const,
+        nombre: c.razonSocial || "—",
+        direccion: c.direccion1 || "",
+        codigo,
+      };
+    }),
+  ];
+
   const t = buscar.trim().toLowerCase();
   const filtrados = t
-    ? clientes.filter((c) =>
-        [c.cliente, c.nombreDireccion, c.codigoDireccion, c.direccion].some((f) =>
+    ? todos.filter((c) =>
+        [c.nombre, c.codigo, c.direccion].some((f) =>
           f?.toLowerCase().includes(t)
         )
       )
-    : clientes;
+    : todos;
 
   return (
     <div
@@ -1655,7 +1699,7 @@ function AsignarClienteModal({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-2xl bg-white shadow-xl"
+        className="flex max-h-[80vh] w-full max-w-xl flex-col rounded-2xl bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-[#eceef0] px-6 py-4">
@@ -1675,6 +1719,9 @@ function AsignarClienteModal({
             placeholder="Buscar cliente por nombre o código…"
             className="w-full"
           />
+          <p className="mt-1.5 text-xs text-[#7a8794]">
+            {filtrados.length} de {todos.length} clientes
+          </p>
         </div>
         <div className="nice-scroll min-h-0 flex-1 overflow-auto">
           {filtrados.length === 0 ? (
@@ -1683,14 +1730,14 @@ function AsignarClienteModal({
             </p>
           ) : (
             <ul className="divide-y divide-[#f0f2ee]">
-              {filtrados.slice(0, 200).map((c) => (
-                <li key={c.id}>
+              {filtrados.slice(0, 500).map((c) => (
+                <li key={c.key}>
                   <button
                     onClick={async () => {
                       if (asignandoId) return;
-                      setAsignandoId(c.id);
+                      setAsignandoId(c.key);
                       try {
-                        await onAsignar(c.id);
+                        await onAsignar(c.tipo, c.id);
                       } finally {
                         setAsignandoId(null);
                       }
@@ -1699,14 +1746,23 @@ function AsignarClienteModal({
                     className="flex w-full items-center justify-between gap-3 px-6 py-3 text-left transition-colors hover:bg-[#f9fbf7] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-[#14352a]">
-                        {tc(c.cliente || c.nombreDireccion) || "—"}
+                      <p className="flex items-center gap-2 truncate font-medium text-[#14352a]">
+                        {tc(c.nombre) || "—"}
+                        <span
+                          className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                            c.tipo === "TAT"
+                              ? "bg-[#fdf0e3] text-[#b4711e]"
+                              : "bg-[#e8f3e2] text-[#2f8f4e]"
+                          }`}
+                        >
+                          {c.tipo === "TAT" ? "TAT" : "Distribución"}
+                        </span>
                       </p>
                       <p className="truncate text-xs text-[#7a8794]">
-                        {tc(c.direccion) || tc(c.nombreDireccion) || "Sin dirección"}
+                        {tc(c.direccion) || "Sin dirección"}
                       </p>
                     </div>
-                    {asignandoId === c.id ? (
+                    {asignandoId === c.key ? (
                       <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-[#2f8f4e]">
                         <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M21 12a9 9 0 1 1-6.219-8.56" />
@@ -1714,9 +1770,9 @@ function AsignarClienteModal({
                         Asignando…
                       </span>
                     ) : (
-                      c.codigoDireccion && (
-                        <span className="shrink-0 rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">
-                          {c.codigoDireccion}
+                      c.codigo && (
+                        <span className="shrink-0 rounded-full bg-[#eef1f4] px-2.5 py-0.5 text-xs font-medium text-[#45505e]">
+                          {c.codigo}
                         </span>
                       )
                     )}
