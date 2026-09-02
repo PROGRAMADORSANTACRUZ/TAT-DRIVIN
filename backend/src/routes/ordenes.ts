@@ -458,15 +458,20 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
       where: { eliminado: false, consecutivos: { not: null } },
       select: { codigoTercero: true, consecutivos: true },
     });
-    // Clientes TAT indexados por NIT: los TAT se identifican por NIT, no por consecutivo.
+    // Clientes TAT indexados por NIT + sucursal: cada sucursal es un cliente distinto.
     const clientesTatNit = await prisma.clienteTat.findMany({
       where: { eliminado: false, nit: { not: null } },
-      select: { nit: true, codigoTercero: true },
+      select: { nit: true, codigoTercero: true, sucursal: true },
     });
+    // Clave = NIT-<entero de sucursal> (y NIT puro como respaldo para órdenes sin sucursal).
     const porNit = new Map<string, string | null>();
     for (const c of clientesTatNit) {
-      const k = String(c.nit ?? "").trim();
-      if (k && !porNit.has(k)) porNit.set(k, c.codigoTercero);
+      const nit = String(c.nit ?? "").trim();
+      if (!nit) continue;
+      const suc = parseInt(String(c.sucursal ?? "").trim(), 10);
+      const key = Number.isFinite(suc) ? `${nit}-${suc}` : nit;
+      if (!porNit.has(key)) porNit.set(key, c.codigoTercero);
+      if (!porNit.has(nit)) porNit.set(nit, c.codigoTercero);
     }
 
     const index = buildAddressIndex(addresses);
@@ -539,8 +544,9 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
     for (const g of grupos.values()) {
       // El consecutivo de la orden es "cliente - destino".
       const consecutivo = claveCliente(`${g.cliente} - ${g.destino}`);
-      // Los TAT se identifican por NIT; los demás por consecutivo o dirección Drivin.
-      const codigoNit = g.nit ? porNit.get(g.nit) : undefined;
+      // Los TAT se identifican por NIT-sucursal (g.codigo); los demás por consecutivo o dirección.
+      const claveTat = g.codigo ?? g.nit ?? "";
+      const codigoNit = claveTat ? porNit.get(claveTat) : undefined;
       const codigoManual =
         codigoNit ??
         porConsecutivo.get(consecutivo) ??
@@ -829,9 +835,19 @@ interface TatInvoice {
   fecha_documento?: string;
   cliente_factura?: string;
   razon_social_cliente?: string;
+  codigo_sucursal?: string;
+  descripcion_sucursal?: string;
+  direccion_sucursal?: string;
   tipo_comercial?: string;
   cantidad_inv?: number;
   valor_subtotal?: number;
+}
+
+// Identificador de cliente TAT por sucursal: NIT-<entero de sucursal>.
+// Mismo NIT con distinta sucursal = cliente distinto (ej. "005" -> 1045679622-5).
+function claveNitSucursal(nit: string, codigoSucursal: string | undefined): string {
+  const suc = parseInt(String(codigoSucursal ?? "").trim(), 10);
+  return Number.isFinite(suc) ? `${nit}-${suc}` : nit;
 }
 
 // Convierte "2026-08-27" (ISO) a "27/08/2026" (formato del resto de órdenes).
@@ -914,16 +930,12 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
     );
     const clientes = await prisma.clienteTat.findMany({
       where: { nit: { in: nits }, eliminado: false },
-      select: { nit: true, direccion1: true, codigoTercero: true, vendedor: true },
+      select: { nit: true, direccion1: true, vendedor: true },
     });
     const dirPorNit = new Map<string, string>();
-    const codigoPorNit = new Map<string, string>();
     const vendedorPorNit = new Map<string, string>();
     for (const c of clientes) {
       if (!c.nit) continue;
-      if (c.codigoTercero && !codigoPorNit.has(c.nit)) {
-        codigoPorNit.set(c.nit, c.codigoTercero);
-      }
       if (c.vendedor && !vendedorPorNit.has(c.nit)) {
         vendedorPorNit.set(c.nit, c.vendedor.trim());
       }
@@ -941,10 +953,14 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
       .map((f) => {
         const numeroOrden = String(f.nro_documento);
         const nit = String(f.cliente_factura ?? "").trim();
-        // Dirección real del maestro TAT; si no hay una válida, queda vacía.
-        const direccion = dirPorNit.get(nit) ?? null;
-        // Para agrupar/cruzar se usa la dirección; si no hay, el NIT.
-        const destino = direccion ?? nit;
+        // Identidad por sucursal: NIT-<entero>. Mismo NIT, distinta sucursal = cliente distinto.
+        const codigo = nit ? claveNitSucursal(nit, f.codigo_sucursal) : null;
+        // La factura ahora trae la dirección de la sucursal; si no es válida, se usa el maestro.
+        const dirInv = String(f.direccion_sucursal ?? "").trim();
+        const direccion =
+          dirInv && esDireccionTatValida(dirInv) ? dirInv : dirPorNit.get(nit) ?? null;
+        // El destino (clave de agrupación/cruce) distingue cada sucursal por su código.
+        const destino = codigo ?? direccion ?? nit;
         return {
           fecha: isoToDDMMYYYY(String(f.fecha_documento ?? "")),
           numeroOrden,
@@ -953,7 +969,7 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
           producto: String(f.tipo_comercial ?? "").trim(),
           cantidadKg: Number(f.cantidad_inv) || 0,
           nit: nit || null,
-          codigo: codigoPorNit.get(nit) ?? null,
+          codigo,
           direccion,
           vendedor: vendedorPorNit.get(nit) ?? null,
           valor: Number(f.valor_subtotal) || 0,

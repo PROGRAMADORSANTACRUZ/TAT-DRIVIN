@@ -109,6 +109,14 @@ const SUBCATS: Record<"GS" | "TAT", string[]> = {
   TAT: ["Agropecuaria", "Inversiones"],
 };
 
+// Etiqueta corta para las subcategorías GS (las TAT se muestran completas).
+const SUBCAT_LABEL: Record<string, string> = {
+  Bovino: "B",
+  Porcino: "P",
+  "Vísceras porcino": "VP",
+  "Vísceras bovinos": "VB",
+};
+
 // Determina si un grupo cae en la subcategoría seleccionada.
 function matchSub(g: OrdenGrupo, dist: "" | "TAT" | "GS", sub: string): boolean {
   if (!sub) return true;
@@ -594,12 +602,13 @@ export default function AsignacionVehiculosPage() {
                         {SUBCATS[filtroDist].map((sub) => (
                           <button
                             key={sub}
+                            title={sub}
                             onClick={() => setFiltroSub(filtroSub === sub ? "" : sub)}
                             className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                               filtroSub === sub ? "bg-[#14352a] text-white" : "bg-[#f0f2ee] text-[#45505e] hover:bg-[#e4e8e0]"
                             }`}
                           >
-                            {sub}
+                            {SUBCAT_LABEL[sub] ?? sub}
                           </button>
                         ))}
                       </>
