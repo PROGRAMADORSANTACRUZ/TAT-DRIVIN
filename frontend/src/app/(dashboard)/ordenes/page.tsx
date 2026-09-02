@@ -123,6 +123,13 @@ const dirLimpia = (d: string | null | undefined): string => {
   return s && !/^n\/?a$/i.test(s) ? s : "";
 };
 
+// Extrae el número de sucursal de un NIT concatenado "nit-sucursal".
+const sucursalDeNit = (nit: string | null | undefined): string => {
+  const s = String(nit ?? "");
+  const i = s.lastIndexOf("-");
+  return i > 0 ? s.slice(i + 1) : "";
+};
+
 type CategoryId = "BOVINO" | "PORCINO" | "TAT" | "INVERSIONES";
 
 const CATEGORIES = [
@@ -865,6 +872,7 @@ export default function OrdenesPage() {
                           <th className="px-4 py-3 font-semibold">Fecha</th>
                           <th className="px-4 py-3 font-semibold">No. Orden</th>
                           <th className="px-4 py-3 font-semibold">NIT</th>
+                          <th className="px-4 py-3 font-semibold">Sucursal</th>
                           <th className="px-4 py-3 font-semibold">Cliente</th>
                           <th className="px-4 py-3 font-semibold">Dirección</th>
                           <th className="px-4 py-3 text-right font-semibold">Ítems</th>
@@ -907,6 +915,7 @@ export default function OrdenesPage() {
                           {activeCat.isTat ? (
                             <>
                               <td className="whitespace-nowrap px-4 py-3 text-[#45505e]">{g.nit || "—"}</td>
+                              <td className="px-4 py-3 text-[#45505e]">{sucursalDeNit(g.nit) || "—"}</td>
                               <td className="px-4 py-3 text-[#45505e]">{tc(g.cliente) || "—"}</td>
                               <td className="px-4 py-3 text-[#45505e]">{dirLimpia(g.direccion) ? tc(dirLimpia(g.direccion)) : "—"}</td>
                               <td className="px-4 py-3 text-right tabular-nums text-[#45505e]">

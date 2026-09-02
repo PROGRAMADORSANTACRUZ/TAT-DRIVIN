@@ -953,7 +953,7 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
       .map((f) => {
         const numeroOrden = String(f.nro_documento);
         const nit = String(f.cliente_factura ?? "").trim();
-        // Identidad por sucursal: NIT-<entero>. Mismo NIT, distinta sucursal = cliente distinto.
+        // Identidad por sucursal: NIT-<entero>. Es el NIT que se guarda (nit-sucursal).
         const codigo = nit ? claveNitSucursal(nit, f.codigo_sucursal) : null;
         // La dirección de la factura es la fuente real: se usa salvo que sea vacía o basura.
         const dirInv = String(f.direccion_sucursal ?? "").trim();
@@ -968,7 +968,8 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
           destino,
           producto: String(f.tipo_comercial ?? "").trim(),
           cantidadKg: Number(f.cantidad_inv) || 0,
-          nit: nit || null,
+          // El NIT guardado es NIT-sucursal (identidad única del cliente por sucursal).
+          nit: codigo,
           codigo,
           direccion,
           vendedor: vendedorPorNit.get(nit) ?? null,
