@@ -91,6 +91,8 @@ export default function ClienteFormModal({
   tat,
   nombreInicial = "",
   consecutivoInicial,
+  direccionInicial = "",
+  codigoInicial = "",
   onClose,
   onSaved,
   onDeleted,
@@ -100,6 +102,8 @@ export default function ClienteFormModal({
   tat?: ClienteTat;
   nombreInicial?: string;
   consecutivoInicial?: string;
+  direccionInicial?: string;
+  codigoInicial?: string;
   onClose: () => void;
   onSaved: (cliente: Cliente | ClienteTat) => void;
   onDeleted?: () => void;
@@ -107,7 +111,12 @@ export default function ClienteFormModal({
   const [form, setForm] = useState<Form>(() => {
     if (modo === "editarGS" && gs) return fromGS(gs);
     if (modo === "editarTAT" && tat) return fromTat(tat);
-    return { ...VACIO, nombre: nombreInicial ? tc(nombreInicial) : "" };
+    return {
+      ...VACIO,
+      nombre: nombreInicial ? tc(nombreInicial) : "",
+      direccion: direccionInicial ? tc(direccionInicial) : "",
+      codigo: codigoInicial ?? "",
+    };
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

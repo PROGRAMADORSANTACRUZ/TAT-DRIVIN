@@ -222,6 +222,10 @@ export interface Orden {
   estado: string;
   distribucion: string;
   tatOrigen: string | null;
+  nit: string | null;
+  codigo: string | null;
+  valor: number;
+  direccion: string | null;
   reenviado: boolean;
   reenviadoAt: string | null;
   asignadoVehiculo: string | null;
@@ -237,6 +241,10 @@ export function getOrdenes(all = false): Promise<Orden[]> {
 export interface ClienteSinRegistrar {
   cliente: string;
   destino: string;
+  nit?: string | null;
+  codigo?: string | null;
+  direccion?: string | null;
+  distribucion?: string;
   pedidos: number;
   numeros?: string[];
   ids?: string[];

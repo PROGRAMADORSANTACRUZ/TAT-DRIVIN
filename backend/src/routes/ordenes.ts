@@ -35,6 +35,9 @@ interface OrdenRow {
   destino: string;
   producto: string;
   cantidadKg: number;
+  codigo?: string | null;
+  direccion?: string | null;
+  nit?: string | null;
 }
 
 // Destinos que son movimientos de planta, no órdenes: se ignoran al importar.
@@ -99,6 +102,8 @@ function parseOrdenes(buffer: Buffer): OrdenRow[] {
     numeroOrden: header.findIndex((h) => h.includes("ORDEN")),
     cliente: header.findIndex((h) => h.includes("CLIENTE")),
     destino: header.findIndex((h) => h.includes("DESTINO")),
+    direccion: header.findIndex((h) => h.includes("DIRECC")),
+    codigo: header.findIndex((h) => h === "CODIGO" || h.includes("CODIGO")),
     producto: header.findIndex((h) => h.includes("PRODUCTO")),
     cantidad: header.findIndex((h) => h.includes("CANT") && h.includes("KG")),
   };
@@ -125,6 +130,8 @@ function parseOrdenes(buffer: Buffer): OrdenRow[] {
       destino,
       producto: pick(r, col.producto),
       cantidadKg: Number.parseFloat(cantidadStr) || 0,
+      codigo: pick(r, col.codigo) || null,
+      direccion: pick(r, col.direccion) || null,
     });
   }
   return out;
@@ -155,6 +162,7 @@ function parseOrdenesInversiones(buffer: Buffer): OrdenRow[] {
     numeroOrden: header.findIndex((h) => h.includes("NRO") && h.includes("DOC")),
     nit: header.findIndex((h) => h.includes("CLIENTE") && h.includes("FACTURA")),
     cliente: header.findIndex((h) => h.includes("RAZON") && h.includes("SOCIAL")),
+    direccion: header.findIndex((h) => h.includes("DIRECC")),
     producto: header.findIndex((h) => h.includes("DESC") || h.includes("ITEM")),
     cantidad: header.findIndex((h) => h.includes("PESO") || (h.includes("KG") && !h.includes("CANT"))),
   };
@@ -190,6 +198,8 @@ function parseOrdenesInversiones(buffer: Buffer): OrdenRow[] {
       destino,
       producto: pick(r, col.producto),
       cantidadKg: Number.parseFloat(cantidadStr) || 0,
+      nit: pick(r, col.nit) || null,
+      direccion: pick(r, col.direccion) || null,
     });
   }
   return out;
@@ -436,7 +446,7 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
     const [ordenes, addresses, clientesGS] = await Promise.all([
       prisma.orden.findMany({
         where: { estado: { notIn: ["Entregado", "Rechazado"] } },
-        select: { id: true, cliente: true, destino: true, numeroOrden: true },
+        select: { id: true, cliente: true, destino: true, numeroOrden: true, nit: true, codigo: true, direccion: true, distribucion: true },
       }),
       fetchDrivinAddresses(),
       prisma.cliente.findMany({
@@ -448,6 +458,16 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
       where: { eliminado: false, consecutivos: { not: null } },
       select: { codigoTercero: true, consecutivos: true },
     });
+    // Clientes TAT indexados por NIT: los TAT se identifican por NIT, no por consecutivo.
+    const clientesTatNit = await prisma.clienteTat.findMany({
+      where: { eliminado: false, nit: { not: null } },
+      select: { nit: true, codigoTercero: true },
+    });
+    const porNit = new Map<string, string | null>();
+    for (const c of clientesTatNit) {
+      const k = String(c.nit ?? "").trim();
+      if (k && !porNit.has(k)) porNit.set(k, c.codigoTercero);
+    }
 
     const index = buildAddressIndex(addresses);
 
@@ -483,15 +503,18 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
     // Agrupa por par cliente||destino.
     const grupos = new Map<
       string,
-      { cliente: string; destino: string; pedidos: Set<string>; ids: string[] }
+      { cliente: string; destino: string; nit: string | null; codigo: string | null; direccion: string | null; distribucion: string; pedidos: Set<string>; ids: string[] }
     >();
     for (const o of ordenes) {
       const key = `${claveCliente(o.cliente)}||${claveCliente(o.destino)}`;
       let g = grupos.get(key);
       if (!g) {
-        g = { cliente: o.cliente, destino: o.destino, pedidos: new Set(), ids: [] };
+        g = { cliente: o.cliente, destino: o.destino, nit: o.nit ?? null, codigo: o.codigo ?? null, direccion: o.direccion ?? null, distribucion: o.distribucion, pedidos: new Set(), ids: [] };
         grupos.set(key, g);
       }
+      if (!g.nit && o.nit) g.nit = o.nit;
+      if (!g.codigo && o.codigo) g.codigo = o.codigo;
+      if (!g.direccion && o.direccion) g.direccion = o.direccion;
       g.pedidos.add(o.numeroOrden);
       g.ids.push(o.id);
     }
@@ -499,6 +522,10 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
     const sinRegistrar: {
       cliente: string;
       destino: string;
+      nit: string | null;
+      codigo: string | null;
+      direccion: string | null;
+      distribucion: string;
       pedidos: number;
       numeros: string[];
       ids: string[];
@@ -512,12 +539,18 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
     for (const g of grupos.values()) {
       // El consecutivo de la orden es "cliente - destino".
       const consecutivo = claveCliente(`${g.cliente} - ${g.destino}`);
+      // Los TAT se identifican por NIT; los demás por consecutivo o dirección Drivin.
+      const codigoNit = g.nit ? porNit.get(g.nit) : undefined;
       const codigoManual =
+        codigoNit ??
         porConsecutivo.get(consecutivo) ??
         porConsecutivo.get(claveCliente(g.destino));
-      const match = codigoManual
-        ? { code: codigoManual }
-        : matchDrivinAddress(index, g.cliente, g.destino);
+      const match =
+        codigoNit !== undefined
+          ? { code: codigoNit }
+          : codigoManual
+          ? { code: codigoManual }
+          : matchDrivinAddress(index, g.cliente, g.destino);
       if (match) {
         registrados.push({
           cliente: g.cliente,
@@ -529,6 +562,10 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
         sinRegistrar.push({
           cliente: g.cliente,
           destino: g.destino,
+          nit: g.nit,
+          codigo: g.codigo,
+          direccion: g.direccion,
+          distribucion: g.distribucion,
           pedidos: g.pedidos.size,
           numeros: [...g.pedidos],
           ids: g.ids,
@@ -862,12 +899,16 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
     );
     const clientes = await prisma.clienteTat.findMany({
       where: { nit: { in: nits }, eliminado: false },
-      select: { nit: true, direccion1: true },
+      select: { nit: true, direccion1: true, codigoTercero: true },
     });
     const dirPorNit = new Map<string, string>();
+    const codigoPorNit = new Map<string, string>();
     for (const c of clientes) {
       if (c.nit && c.direccion1 && !dirPorNit.has(c.nit)) {
         dirPorNit.set(c.nit, c.direccion1);
+      }
+      if (c.nit && c.codigoTercero && !codigoPorNit.has(c.nit)) {
+        codigoPorNit.set(c.nit, c.codigoTercero);
       }
     }
 
@@ -886,6 +927,9 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
           destino,
           producto: String(f.tipo_comercial ?? "").trim(),
           cantidadKg: Number(f.cantidad_inv) || 0,
+          nit: nit || null,
+          codigo: codigoPorNit.get(nit) ?? null,
+          valor: Number(f.valor_subtotal) || 0,
           estado: "Pendiente",
           distribucion: "TAT",
           tatOrigen: origen,

@@ -49,6 +49,11 @@ type OrdenGrupo = {
   reenviadoAt: string | null;
   items: Orden[];
   totalKg: number;
+  nit: string | null;
+  codigo: string | null;
+  totalValor: number;
+  distribucion: string;
+  tatOrigen: string | null;
 };
 
 function agrupar(ordenes: Orden[]): OrdenGrupo[] {
@@ -68,11 +73,17 @@ function agrupar(ordenes: Orden[]): OrdenGrupo[] {
         reenviadoAt: null,
         items: [],
         totalKg: 0,
+        nit: o.nit ?? null,
+        codigo: o.codigo ?? null,
+        totalValor: 0,
+        distribucion: o.distribucion,
+        tatOrigen: o.tatOrigen ?? null,
       };
       map.set(key, g);
     }
     g.items.push(o);
     g.totalKg += o.cantidadKg;
+    g.totalValor += o.valor ?? 0;
     if (o.reenviado) {
       g.reenviado = true;
       if (o.reenviadoAt) g.reenviadoAt = o.reenviadoAt;
@@ -95,6 +106,16 @@ function consolidarProductos(items: Orden[]) {
   }
   return Array.from(map.values()).sort((a, b) => b.cantidadKg - a.cantidadKg);
 }
+
+// Formatea un valor en pesos colombianos sin decimales.
+const fmtMoney = (n: number) =>
+  `$${(n || 0).toLocaleString("es-CO", { maximumFractionDigits: 0 })}`;
+
+// Limpia una dirección: descarta vacíos y placeholders tipo "N/a".
+const dirLimpia = (d: string | null | undefined): string => {
+  const s = String(d ?? "").trim();
+  return s && !/^n\/?a$/i.test(s) ? s : "";
+};
 
 type CategoryId = "BOVINO" | "PORCINO" | "TAT" | "INVERSIONES";
 
@@ -259,7 +280,7 @@ export default function OrdenesPage() {
         await importOrdenes(file, tipo);
       setMessage(
         `Se importaron ${importados}: ${entregados} entregadas, ${rechazados} rechazadas, ${pendientes} pendientes.` +
-          (sinCodigo ? ` ${sinCodigo} órdenes no se subieron por no tener número de orden.` : "")
+          (sinCodigo ? ` ${sinCodigo} clientes sin código no guardados por falta de información.` : "")
       );
       await load();
     } catch (err) {
@@ -304,7 +325,7 @@ export default function OrdenesPage() {
       const label = origen === "INVERSIONES" ? "Inversiones" : "Agropecuaria";
       setMessage(
         `Se sincronizaron ${importados} facturas TAT (${label}).` +
-          (sinCodigo ? ` ${sinCodigo} facturas no se subieron por no tener número.` : "")
+          (sinCodigo ? ` ${sinCodigo} clientes sin código no guardados por falta de información.` : "")
       );
       await load();
     } catch (err) {
@@ -687,7 +708,7 @@ export default function OrdenesPage() {
           onClick={closeCategory}
         >
           <div
-            className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            className="flex max-h-[90vh] w-[95vw] max-w-[1600px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div
@@ -829,21 +850,38 @@ export default function OrdenesPage() {
                 <div className="nice-scroll min-h-0 flex-1 overflow-auto">
                   <table className="w-full table-auto text-left text-sm">
                     <thead className="sticky top-0 z-10 border-b border-[#eceef0] bg-[#f7faf5] text-xs uppercase tracking-wide text-[#7a8794]">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold">#</th>
-                        <th className="px-4 py-3 font-semibold">Fecha</th>
-                        <th className="px-4 py-3 font-semibold">No. Orden</th>
-                        <th className="px-4 py-3 font-semibold">Consecutivo</th>
-                        <th className="px-4 py-3 font-semibold">Código</th>
-                        <th className="px-4 py-3 font-semibold">Cliente</th>
-                        <th className="px-4 py-3 font-semibold">Destino</th>
-                        <th className="px-4 py-3 text-right font-semibold">Ítems</th>
-                        <th className="px-4 py-3 text-right font-semibold">Total (kg)</th>
-                      </tr>
+                      {activeCat.isTat ? (
+                        <tr>
+                          <th className="px-4 py-3 font-semibold">#</th>
+                          <th className="px-4 py-3 font-semibold">Fecha</th>
+                          <th className="px-4 py-3 font-semibold">No. Orden</th>
+                          <th className="px-4 py-3 font-semibold">Cliente</th>
+                          <th className="px-4 py-3 font-semibold">NIT</th>
+                          <th className="px-4 py-3 font-semibold">Código</th>
+                          <th className="px-4 py-3 font-semibold">Dirección</th>
+                          <th className="px-4 py-3 text-right font-semibold">Ítems</th>
+                          <th className="px-4 py-3 text-right font-semibold">Total valor</th>
+                          <th className="px-4 py-3 text-right font-semibold">Total (kg)</th>
+                        </tr>
+                      ) : (
+                        <tr>
+                          <th className="px-4 py-3 font-semibold">#</th>
+                          <th className="px-4 py-3 font-semibold">Fecha</th>
+                          <th className="px-4 py-3 font-semibold">No. Orden</th>
+                          <th className="px-4 py-3 font-semibold">Consecutivo</th>
+                          <th className="px-4 py-3 font-semibold">Código</th>
+                          <th className="px-4 py-3 font-semibold">Cliente</th>
+                          <th className="px-4 py-3 font-semibold">Destino</th>
+                          <th className="px-4 py-3 text-right font-semibold">Ítems</th>
+                          <th className="px-4 py-3 text-right font-semibold">Total (kg)</th>
+                        </tr>
+                      )}
                     </thead>
                     <tbody className="divide-y divide-[#f0f2ee]">
                       {pendientesGrupos.map((g, i) => {
-                        const codigo = codigoPorClave.get(claveCD(g.cliente, g.destino));
+                        const codigo = activeCat.isTat
+                          ? g.codigo
+                          : codigoPorClave.get(claveCD(g.cliente, g.destino));
                         return (
                         <tr
                           key={g.key}
@@ -857,26 +895,54 @@ export default function OrdenesPage() {
                           <td className="px-4 py-3 font-medium text-[#14352a]">
                             {g.numeroOrden || "—"}
                           </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-[#45505e]">
-                            {`${tc(g.cliente)} - ${tc(g.destino)}`}
-                          </td>
-                          <td className="px-4 py-3">
-                            {codigo ? (
-                              <span className="inline-flex rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">
-                                {codigo}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-[#c47f1a]">Sin código</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-[#45505e]">{g.cliente || "—"}</td>
-                          <td className="px-4 py-3 text-[#45505e]">{g.destino || "—"}</td>
-                          <td className="px-4 py-3 text-right tabular-nums text-[#45505e]">
-                            {consolidarProductos(g.items).length}
-                          </td>
-                          <td className="px-4 py-3 text-right tabular-nums text-[#14352a]">
-                            {g.totalKg.toFixed(2)}
-                          </td>
+                          {activeCat.isTat ? (
+                            <>
+                              <td className="px-4 py-3 text-[#45505e]">{tc(g.cliente) || "—"}</td>
+                              <td className="whitespace-nowrap px-4 py-3 text-[#45505e]">{g.nit || "—"}</td>
+                              <td className="px-4 py-3">
+                                {codigo ? (
+                                  <span className="inline-flex rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">
+                                    {codigo}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-[#c47f1a]">Sin código</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-[#45505e]">{tc(g.destino) || "—"}</td>
+                              <td className="px-4 py-3 text-right tabular-nums text-[#45505e]">
+                                {consolidarProductos(g.items).length}
+                              </td>
+                              <td className="px-4 py-3 text-right tabular-nums text-[#14352a]">
+                                {g.totalValor > 0 ? fmtMoney(g.totalValor) : "—"}
+                              </td>
+                              <td className="px-4 py-3 text-right tabular-nums text-[#14352a]">
+                                {g.totalKg.toFixed(2)}
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="whitespace-nowrap px-4 py-3 text-[#45505e]">
+                                {`${tc(g.cliente)} - ${tc(g.destino)}`}
+                              </td>
+                              <td className="px-4 py-3">
+                                {codigo ? (
+                                  <span className="inline-flex rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">
+                                    {codigo}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-[#c47f1a]">Sin código</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-[#45505e]">{g.cliente || "—"}</td>
+                              <td className="px-4 py-3 text-[#45505e]">{g.destino || "—"}</td>
+                              <td className="px-4 py-3 text-right tabular-nums text-[#45505e]">
+                                {consolidarProductos(g.items).length}
+                              </td>
+                              <td className="px-4 py-3 text-right tabular-nums text-[#14352a]">
+                                {g.totalKg.toFixed(2)}
+                              </td>
+                            </>
+                          )}
                         </tr>
                         );
                       })}
@@ -1016,7 +1082,7 @@ export default function OrdenesPage() {
           onClick={() => setVerifModalOpen(false)}
         >
           <div
-            className="flex max-h-[92vh] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-xl"
+            className="flex max-h-[92vh] w-[95vw] max-w-[1500px] flex-col rounded-2xl bg-white shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between border-b border-[#eceef0] px-6 py-4">
@@ -1066,8 +1132,11 @@ export default function OrdenesPage() {
                   <tr>
                     <th className="px-4 py-3 font-semibold">#</th>
                     <th className="px-4 py-3 font-semibold">Cliente</th>
+                    <th className="px-4 py-3 font-semibold">Tipo</th>
+                    <th className="px-4 py-3 font-semibold">NIT</th>
                     <th className="px-4 py-3 font-semibold">Destino</th>
-                    <th className="px-4 py-3 font-semibold">Concatenado (temporal)</th>
+                    <th className="px-4 py-3 font-semibold">Dirección</th>
+                    <th className="px-4 py-3 font-semibold">Concatenado</th>
                     <th className="px-4 py-3 font-semibold">No. Orden</th>
                     <th className="px-4 py-3 text-right font-semibold">Pedidos</th>
                     <th className="px-4 py-3 text-right font-semibold">Acciones</th>
@@ -1079,22 +1148,38 @@ export default function OrdenesPage() {
                       const t = buscarVerif.trim().toLowerCase();
                       return (
                         !t ||
-                        [c.cliente, c.destino].some((f) =>
+                        [c.cliente, c.destino, c.nit].some((f) =>
                           f?.toLowerCase().includes(t)
                         )
                       );
                     })
-                    .map((c, i) => (
+                    .map((c, i) => {
+                      const esTat = c.distribucion === "TAT";
+                      const dir = dirLimpia(c.direccion);
+                      return (
                       <tr key={`${c.cliente}||${c.destino}`} className="hover:bg-[#f9fbf7]">
                         <td className="px-4 py-3 text-[#7a8794]">{i + 1}</td>
                         <td className="px-4 py-3 font-medium text-[#14352a]">
                           {tc(c.cliente) || "—"}
                         </td>
-                        <td className="px-4 py-3 text-[#45505e]">
-                          {tc(c.destino) || "—"}
+                        <td className="px-4 py-3">
+                          {esTat ? (
+                            <span className="inline-flex rounded-full bg-[#fef3e6] px-2.5 py-0.5 text-xs font-medium text-[#b5731e]">TAT</span>
+                          ) : (
+                            <span className="inline-flex rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">Distribución</span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-[#45505e]">
+                          {esTat ? (c.nit || "—") : "—"}
                         </td>
                         <td className="px-4 py-3 text-[#45505e]">
-                          {`${tc(c.cliente)} - ${tc(c.destino)}`}
+                          {esTat ? "—" : (tc(c.destino) || "—")}
+                        </td>
+                        <td className="px-4 py-3 text-[#45505e]">
+                          {dir ? tc(dir) : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-[#45505e]">
+                          {esTat ? "—" : `${tc(c.cliente)} - ${tc(c.destino)}`}
                         </td>
                         <td className="px-4 py-3 text-[#45505e]">
                           {c.numeros && c.numeros.length > 0 ? (
@@ -1143,7 +1228,8 @@ export default function OrdenesPage() {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -1183,10 +1269,19 @@ export default function OrdenesPage() {
         />
       )}
 
-      {crearTarget && (
+      {crearTarget && (() => {
+        // Datos que ya vienen del archivo/API: código o NIT, dirección real, nombre.
+        const ord = ordenes.find(
+          (o) => claveCD(o.cliente, o.destino) === claveCD(crearTarget.cliente, crearTarget.destino)
+        );
+        const codigoAuto = crearTarget.codigo || crearTarget.nit || ord?.codigo || ord?.nit || "";
+        const direccionAuto = dirLimpia(crearTarget.direccion || ord?.direccion);
+        return (
         <ClienteFormModal
           modo="crear"
           nombreInicial={crearTarget.cliente}
+          direccionInicial={direccionAuto}
+          codigoInicial={codigoAuto}
           consecutivoInicial={`${crearTarget.cliente} - ${crearTarget.destino}`}
           onClose={() => setCrearTarget(null)}
           onSaved={() => {
@@ -1195,7 +1290,8 @@ export default function OrdenesPage() {
             load();
           }}
         />
-      )}
+        );
+      })()}
     </div>
   );
 }

@@ -47,6 +47,11 @@ type OrdenGrupo = {
   ids: string[];
   totalKg: number;
   items: number;
+  nit: string | null;
+  codigo: string | null;
+  totalValor: number;
+  productos: string[];
+  direccion: string | null;
 };
 
 function agrupar(ordenes: Orden[]): OrdenGrupo[] {
@@ -68,16 +73,57 @@ function agrupar(ordenes: Orden[]): OrdenGrupo[] {
         ids: [],
         totalKg: 0,
         items: 0,
+        nit: o.nit ?? null,
+        codigo: o.codigo ?? null,
+        totalValor: 0,
+        productos: [],
+        direccion: o.direccion ?? null,
       };
       map.set(key, g);
     }
     g.ids.push(o.id);
     g.totalKg += o.cantidadKg;
+    g.totalValor += o.valor ?? 0;
     g.items += 1;
+    if (o.producto) g.productos.push(o.producto);
+    if (!g.direccion && o.direccion) g.direccion = o.direccion;
     if (o.asignadoVehiculo) g.asignado = o.asignadoVehiculo;
     if (o.estado === "Enviado") g.enviado = true;
   }
   return Array.from(map.values());
+}
+
+// Formatea un valor en pesos colombianos sin decimales.
+const fmtMoney = (n: number) =>
+  `$${(n || 0).toLocaleString("es-CO", { maximumFractionDigits: 0 })}`;
+
+// Limpia una dirección: descarta vacíos y placeholders tipo "N/a".
+const dirLimpia = (d: string | null | undefined): string => {
+  const s = String(d ?? "").trim();
+  return s && !/^n\/?a$/i.test(s) ? s : "";
+};
+
+// Subcategorías por filtro principal. GS = Grandes Superficies (Agropecuaria/Distribución).
+const SUBCATS: Record<"GS" | "TAT", string[]> = {
+  GS: ["Bovino", "Porcino", "Vísceras porcino", "Vísceras bovinos"],
+  TAT: ["Agropecuaria", "Inversiones"],
+};
+
+// Determina si un grupo cae en la subcategoría seleccionada.
+function matchSub(g: OrdenGrupo, dist: "" | "TAT" | "GS", sub: string): boolean {
+  if (!sub) return true;
+  if (dist === "TAT") {
+    if (sub === "Inversiones") return g.tatOrigen === "INVERSIONES";
+    if (sub === "Agropecuaria") return g.tatOrigen !== "INVERSIONES";
+    return true;
+  }
+  const num = g.numeroOrden?.toUpperCase() ?? "";
+  const esVisc = g.productos.some((p) => /v[íi]scera/i.test(p));
+  if (sub === "Bovino") return num.startsWith("B") && !esVisc;
+  if (sub === "Porcino") return num.startsWith("P") && !esVisc;
+  if (sub === "Vísceras bovinos") return num.startsWith("B") && esVisc;
+  if (sub === "Vísceras porcino") return num.startsWith("P") && esVisc;
+  return true;
 }
 
 export default function AsignacionVehiculosPage() {
@@ -93,6 +139,7 @@ export default function AsignacionVehiculosPage() {
   const [verAsignadas, setVerAsignadas] = useState(false);
   // Filtro por tipo de distribución en órdenes pendientes.
   const [filtroDist, setFiltroDist] = useState<"" | "TAT" | "GS">("");
+  const [filtroSub, setFiltroSub] = useState<string>("");
   const [verDiagrama, setVerDiagrama] = useState(false);
   const [buscarAsig, setBuscarAsig] = useState("");
   const [seleccionAsig, setSeleccionAsig] = useState<Set<string>>(new Set());
@@ -189,6 +236,7 @@ export default function AsignacionVehiculosPage() {
   const to = buscarOrd.trim().toLowerCase();
   const pendientesFiltrados = sinAsignarGrupos
     .filter((g) => (filtroDist === "" ? true : filtroDist === "TAT" ? g.distribucion === "TAT" : g.distribucion !== "TAT"))
+    .filter((g) => (filtroDist === "" ? true : matchSub(g, filtroDist, filtroSub)))
     .filter((g) =>
       to
         ? [g.numeroOrden, g.cliente, g.destino].some((f) => f?.toLowerCase().includes(to))
@@ -522,10 +570,10 @@ export default function AsignacionVehiculosPage() {
                       Ver asignadas ({conAsignacionGrupos.length})
                     </button>
                   )}
-                  {/* Filtro por tipo de distribución */}
+                  {/* Filtro por tipo de distribución + subcategorías */}
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={() => setFiltroDist(filtroDist === "GS" ? "" : "GS")}
+                      onClick={() => { setFiltroSub(""); setFiltroDist(filtroDist === "GS" ? "" : "GS"); }}
                       className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
                         filtroDist === "GS" ? "bg-[#2f8f4e] text-white" : "bg-[#e8f3e2] text-[#2f8f4e] hover:bg-[#d7eccd]"
                       }`}
@@ -533,13 +581,29 @@ export default function AsignacionVehiculosPage() {
                       Grandes Superficies
                     </button>
                     <button
-                      onClick={() => setFiltroDist(filtroDist === "TAT" ? "" : "TAT")}
+                      onClick={() => { setFiltroSub(""); setFiltroDist(filtroDist === "TAT" ? "" : "TAT"); }}
                       className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
                         filtroDist === "TAT" ? "bg-[#b5731e] text-white" : "bg-[#fef3e6] text-[#b5731e] hover:bg-[#fbe6cd]"
                       }`}
                     >
                       TAT
                     </button>
+                    {filtroDist !== "" && (
+                      <>
+                        <span className="mx-1 h-4 w-px bg-[#dfe4e0]" />
+                        {SUBCATS[filtroDist].map((sub) => (
+                          <button
+                            key={sub}
+                            onClick={() => setFiltroSub(filtroSub === sub ? "" : sub)}
+                            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                              filtroSub === sub ? "bg-[#14352a] text-white" : "bg-[#f0f2ee] text-[#45505e] hover:bg-[#e4e8e0]"
+                            }`}
+                          >
+                            {sub}
+                          </button>
+                        ))}
+                      </>
+                    )}
                   </div>
                   {rechazadosGrupos.length > 0 && (
                     <button
@@ -566,43 +630,39 @@ export default function AsignacionVehiculosPage() {
                     <tr>
                       <th className="px-4 py-3"></th>
                       <th className="px-4 py-3 font-semibold">No. Orden</th>
-                      <th className="px-4 py-3 font-semibold">Código</th>
-                      <th className="px-4 py-3 font-semibold">Distribución</th>
+                      <th className="px-4 py-3 font-semibold">Tipo</th>
+                      <th className="px-4 py-3 font-semibold">Cliente</th>
+                      <th className="px-4 py-3 font-semibold">NIT</th>
+                      <th className="px-4 py-3 font-semibold">Dirección</th>
                       <th className="px-4 py-3 text-right font-semibold">Total (kg)</th>
-                      <th className="px-4 py-3 font-semibold">Asignada</th>
+                      <th className="px-4 py-3 text-right font-semibold">Total dinero</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#f0f2ee]">
-                    {pendientesFiltrados.map((g) => (
+                    {pendientesFiltrados.map((g) => {
+                      const esTat = g.distribucion === "TAT";
+                      const dir = dirLimpia(g.direccion);
+                      return (
                       <tr key={g.key} className="hover:bg-[#f9fbf7]">
                         <td className="px-4 py-2">
                           <input type="checkbox" className="h-4 w-4 cursor-pointer accent-[#2f8f4e]" checked={seleccion.has(g.key)} onChange={() => toggle(g.key)} />
                         </td>
                         <td className="px-4 py-2 font-medium text-[#14352a]">{g.numeroOrden || " "}</td>
-                        <td className="whitespace-nowrap px-4 py-2 text-[#45505e]">{`${tc(g.cliente)} - ${tc(g.destino)}`}</td>
                         <td className="px-4 py-2">
-                          {g.distribucion === "TAT" ? (
-                            <span className="inline-flex rounded-full bg-[#fef3e6] px-2.5 py-0.5 text-xs font-medium text-[#b5731e]">
-                              {g.tatOrigen === "INVERSIONES"
-                                ? "TAT Inversiones"
-                                : g.tatOrigen === "AGROPECUARIA"
-                                ? "TAT Agropecuaria"
-                                : "TAT"}
-                            </span>
+                          {esTat ? (
+                            <span className="inline-flex rounded-full bg-[#fef3e6] px-2.5 py-0.5 text-xs font-medium text-[#b5731e]">TAT</span>
                           ) : (
-                            <span className="inline-flex rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">Agropecuaria</span>
+                            <span className="inline-flex rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">Distribución</span>
                           )}
                         </td>
+                        <td className="px-4 py-2 text-[#45505e]">{tc(g.cliente) || "—"}</td>
+                        <td className="whitespace-nowrap px-4 py-2 text-[#45505e]">{esTat ? (g.nit || "—") : "—"}</td>
+                        <td className="px-4 py-2 text-[#45505e]">{dir ? tc(dir) : (esTat ? "—" : tc(g.destino))}</td>
                         <td className="px-4 py-2 text-right tabular-nums text-[#14352a]">{g.totalKg.toFixed(2)}</td>
-                        <td className="px-4 py-2">
-                          {g.asignado ? (
-                            <span className="inline-flex rounded-full bg-[#e6effb] px-2.5 py-0.5 text-xs font-medium text-[#1a5fb4]">{g.asignado}</span>
-                          ) : (
-                            <span className="text-xs text-[#a6b0a9]">""</span>
-                          )}
-                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums text-[#14352a]">{g.totalValor > 0 ? fmtMoney(g.totalValor) : "—"}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1061,7 +1121,10 @@ export default function AsignacionVehiculosPage() {
                     </th>
                     <th className="w-10 px-2 py-2.5 font-semibold">#</th>
                     <th className="w-28 px-3 py-2.5 font-semibold">No. Orden</th>
-                    <th className="px-3 py-2.5 font-semibold">Código</th>
+                    <th className="px-3 py-2.5 font-semibold">Tipo</th>
+                    <th className="px-3 py-2.5 font-semibold">Cliente</th>
+                    <th className="px-3 py-2.5 font-semibold">NIT</th>
+                    <th className="px-3 py-2.5 font-semibold">Dirección</th>
                     <th className="w-24 px-3 py-2.5 text-right font-semibold">Total (kg)</th>
                     <th className="w-24 px-3 py-2.5 font-semibold">Vehículo</th>
                     <th className="w-24 px-3 py-2.5 font-semibold">Estado</th>
@@ -1069,7 +1132,10 @@ export default function AsignacionVehiculosPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f0f2ee]">
-                  {asignadasFiltradas.map((g, i) => (
+                  {asignadasFiltradas.map((g, i) => {
+                    const esTat = g.distribucion === "TAT";
+                    const dir = dirLimpia(g.direccion);
+                    return (
                     <tr key={g.key} className="hover:bg-[#f9fbf7]">
                       <td className="px-3 py-2">
                         {!g.enviado && (
@@ -1083,7 +1149,16 @@ export default function AsignacionVehiculosPage() {
                       </td>
                       <td className="px-2 py-2 text-[#7a8794]">{i + 1}</td>
                       <td className="whitespace-nowrap px-3 py-2 font-medium text-[#14352a]">{g.numeroOrden}</td>
-                      <td className="truncate px-3 py-2 text-[#45505e]" title={`${tc(g.cliente)} - ${tc(g.destino)}`}>{`${tc(g.cliente)} - ${tc(g.destino)}`}</td>
+                      <td className="px-3 py-2">
+                        {esTat ? (
+                          <span className="inline-flex rounded-full bg-[#fef3e6] px-2.5 py-0.5 text-xs font-medium text-[#b5731e]">TAT</span>
+                        ) : (
+                          <span className="inline-flex rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">Distribución</span>
+                        )}
+                      </td>
+                      <td className="truncate px-3 py-2 text-[#45505e]" title={tc(g.cliente)}>{tc(g.cliente) || "—"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-[#45505e]">{esTat ? (g.nit || "—") : "—"}</td>
+                      <td className="truncate px-3 py-2 text-[#45505e]" title={dir ? tc(dir) : tc(g.destino)}>{dir ? tc(dir) : (esTat ? "—" : tc(g.destino))}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-[#14352a]">{g.totalKg.toFixed(2)}</td>
                       <td className="px-3 py-2">
                         <span className="inline-flex rounded-full bg-[#e6effb] px-2.5 py-0.5 text-xs font-medium text-[#1a5fb4]">{g.asignado}</span>
@@ -1110,7 +1185,8 @@ export default function AsignacionVehiculosPage() {
                         )}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

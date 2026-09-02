@@ -74,6 +74,14 @@ model Orden {
   cantidadKg  Float    @default(0)
   estado      String   @default("Pendiente")
 
+  // Datos de facturación TAT (vienen de la API de facturas; null en Agropecuaria).
+  nit    String?
+  codigo String?
+  valor  Float   @default(0)
+
+  // Dirección real del cliente (columna DIRECCIÓN del Excel o dirección TAT).
+  direccion String?
+
   // Distribución a la que pertenece la orden: "AGROPECUARIA" (Excel) o "TAT" (API).
   distribucion String  @default("AGROPECUARIA")
 
