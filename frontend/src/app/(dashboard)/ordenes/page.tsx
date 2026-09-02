@@ -245,6 +245,8 @@ export default function OrdenesPage() {
   const [clientesDb, setClientesDb] = useState<Cliente[]>([]);
   const [asignarTarget, setAsignarTarget] = useState<ClienteSinRegistrar | null>(null);
   const [crearTarget, setCrearTarget] = useState<ClienteSinRegistrar | null>(null);
+  const [eliminarSinRegTarget, setEliminarSinRegTarget] = useState<ClienteSinRegistrar | null>(null);
+  const [eliminandoSinReg, setEliminandoSinReg] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tipoRef = useRef<"B" | "P" | "I" | null>(null);
 
@@ -405,15 +407,16 @@ export default function OrdenesPage() {
 
   async function handleEliminarSinRegistrar(c: ClienteSinRegistrar) {
     if (!c.ids || c.ids.length === 0) return;
-    if (!window.confirm(
-      `¿Eliminar ${c.ids.length} ${c.ids.length === 1 ? "orden" : "órdenes"} de "${tc(c.cliente)}"? Esta acción no se puede deshacer.`
-    )) return;
+    setEliminandoSinReg(true);
     try {
       const { eliminados } = await eliminarOrdenesPorIds(c.ids);
       setMessage(`Se eliminaron ${eliminados} órdenes de ${tc(c.cliente)}.`);
+      setEliminarSinRegTarget(null);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al eliminar");
+    } finally {
+      setEliminandoSinReg(false);
     }
   }
 
@@ -1218,7 +1221,7 @@ export default function OrdenesPage() {
                               Crear
                             </button>
                             <button
-                              onClick={() => handleEliminarSinRegistrar(c)}
+                              onClick={() => setEliminarSinRegTarget(c)}
                               className="rounded-lg border border-[#f0c4c1] bg-[#fbeceb] px-2.5 py-1 text-xs font-medium text-[#b3261e] transition-colors hover:bg-[#f7dcda]"
                             >
                               Eliminar
@@ -1290,6 +1293,58 @@ export default function OrdenesPage() {
         />
         );
       })()}
+
+      {/* Modal: confirmar eliminación de órdenes de un cliente sin registrar */}
+      {eliminarSinRegTarget && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => !eliminandoSinReg && setEliminarSinRegTarget(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 px-6 pt-6">
+              <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fbeceb] text-[#b3261e]">
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  <line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" />
+                </svg>
+              </span>
+              <div>
+                <h3 className="text-lg font-semibold text-[#14352a]">Eliminar órdenes</h3>
+                <p className="mt-1 text-sm text-[#5f7a68]">
+                  ¿Seguro que quieres eliminar{" "}
+                  <span className="font-semibold text-[#14352a]">
+                    {eliminarSinRegTarget.ids?.length ?? eliminarSinRegTarget.pedidos}
+                  </span>{" "}
+                  {(eliminarSinRegTarget.ids?.length ?? eliminarSinRegTarget.pedidos) === 1 ? "orden" : "órdenes"} de{" "}
+                  <span className="font-semibold text-[#14352a]">{tc(eliminarSinRegTarget.cliente)}</span>? Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex items-center justify-end gap-2 border-t border-[#eceef0] px-6 py-4">
+              <button
+                onClick={() => setEliminarSinRegTarget(null)}
+                disabled={eliminandoSinReg}
+                className="rounded-lg border border-[#dfe4e0] px-4 py-2.5 text-sm font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3] disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleEliminarSinRegistrar(eliminarSinRegTarget)}
+                disabled={eliminandoSinReg}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#b3261e] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#9a2019] disabled:opacity-60"
+              >
+                {eliminandoSinReg && (
+                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.37 0 0 5.37 0 12h4Z" /></svg>
+                )}
+                {eliminandoSinReg ? "Eliminando…" : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
