@@ -955,10 +955,10 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
         const nit = String(f.cliente_factura ?? "").trim();
         // Identidad por sucursal: NIT-<entero>. Mismo NIT, distinta sucursal = cliente distinto.
         const codigo = nit ? claveNitSucursal(nit, f.codigo_sucursal) : null;
-        // La factura ahora trae la dirección de la sucursal; si no es válida, se usa el maestro.
+        // La dirección de la factura es la fuente real: se usa salvo que sea vacía o basura.
         const dirInv = String(f.direccion_sucursal ?? "").trim();
-        const direccion =
-          dirInv && esDireccionTatValida(dirInv) ? dirInv : dirPorNit.get(nit) ?? null;
+        const dirInvOk = dirInv.length >= 2 && !NO_DIRECCION_TAT.has(dirInv.toUpperCase());
+        const direccion = dirInvOk ? dirInv : dirPorNit.get(nit) ?? null;
         // El destino (clave de agrupación/cruce) distingue cada sucursal por su código.
         const destino = codigo ?? direccion ?? nit;
         return {

@@ -1426,7 +1426,7 @@ function AsignarClienteModal({
                         {tc(c.cliente || c.nombreDireccion) || "—"}
                       </p>
                       <p className="truncate text-xs text-[#7a8794]">
-                        {tc(c.nombreDireccion) || tc(c.direccion) || "—"}
+                        {tc(c.direccion) || tc(c.nombreDireccion) || "Sin dirección"}
                       </p>
                     </div>
                     {asignandoId === c.id ? (
