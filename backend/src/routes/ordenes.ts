@@ -843,6 +843,21 @@ const TAT_ORIGENES: Record<string, string> = {
   INVERSIONES: "8",
 };
 
+// Etiquetas que aparecen en direccion1 pero no son direcciones reales.
+const NO_DIRECCION_TAT = new Set([
+  "BOVINO", "PORCINO", "VISCERAS", "VISCERA", "SUBPRODUCTO",
+  "RES", "CERDO", "POLLO", "N/A", "NA", "-", ".", "SIN DIRECCION",
+]);
+
+// Determina si una direccion1 del maestro TAT es realmente una dirección.
+function esDireccionTatValida(d: string): boolean {
+  const s = d.trim().toUpperCase();
+  if (s.length < 5) return false;
+  if (NO_DIRECCION_TAT.has(s)) return false;
+  // Una dirección real suele tener números o un indicador de vía.
+  return /\d/.test(s) || /\b(CLL|CALLE|CRA|CARRERA|CR|KR|AV|AVENIDA|DIAG|DG|TRANS|TV|MZ|LOTE|LT|VIA|KM)\b/.test(s);
+}
+
 router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, res, next) => {
   try {
     const origen = String(req.body?.origen ?? "AGROPECUARIA").toUpperCase();
@@ -904,11 +919,15 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
     const dirPorNit = new Map<string, string>();
     const codigoPorNit = new Map<string, string>();
     for (const c of clientes) {
-      if (c.nit && c.direccion1 && !dirPorNit.has(c.nit)) {
-        dirPorNit.set(c.nit, c.direccion1);
-      }
-      if (c.nit && c.codigoTercero && !codigoPorNit.has(c.nit)) {
+      if (!c.nit) continue;
+      if (c.codigoTercero && !codigoPorNit.has(c.nit)) {
         codigoPorNit.set(c.nit, c.codigoTercero);
+      }
+      const dir = (c.direccion1 ?? "").trim();
+      if (dir && esDireccionTatValida(dir)) {
+        const prev = dirPorNit.get(c.nit);
+        // Prefiere la dirección más específica (la más larga) entre varias sucursales.
+        if (!prev || dir.length > prev.length) dirPorNit.set(c.nit, dir);
       }
     }
 
@@ -918,8 +937,10 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
       .map((f) => {
         const numeroOrden = String(f.nro_documento);
         const nit = String(f.cliente_factura ?? "").trim();
-        // Si el cliente existe en la base TAT, el destino es su dirección; si no, el NIT.
-        const destino = dirPorNit.get(nit) ?? nit;
+        // Dirección real del maestro TAT; si no hay una válida, queda vacía.
+        const direccion = dirPorNit.get(nit) ?? null;
+        // Para agrupar/cruzar se usa la dirección; si no hay, el NIT.
+        const destino = direccion ?? nit;
         return {
           fecha: isoToDDMMYYYY(String(f.fecha_documento ?? "")),
           numeroOrden,
@@ -929,6 +950,7 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
           cantidadKg: Number(f.cantidad_inv) || 0,
           nit: nit || null,
           codigo: codigoPorNit.get(nit) ?? null,
+          direccion,
           valor: Number(f.valor_subtotal) || 0,
           estado: "Pendiente",
           distribucion: "TAT",
