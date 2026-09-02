@@ -712,7 +712,6 @@ export default function AsignacionVehiculosPage() {
       {verRechazados && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setVerRechazados(false)}
         >
           <div
             className="flex max-h-[85vh] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-xl"
@@ -841,7 +840,7 @@ export default function AsignacionVehiculosPage() {
       )}
 
       {vehiclePicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setVehiclePicker(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="flex max-h-[88vh] w-full max-w-5xl flex-col rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex shrink-0 items-center justify-between border-b border-[#eceef0] px-6 py-4">
               <div>
@@ -1074,7 +1073,6 @@ export default function AsignacionVehiculosPage() {
       {verAsignadas && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setVerAsignadas(false)}
         >
           <div
             className="flex max-h-[88vh] w-full max-w-7xl flex-col rounded-2xl bg-white shadow-xl"

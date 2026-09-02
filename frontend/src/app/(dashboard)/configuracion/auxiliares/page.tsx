@@ -138,7 +138,7 @@ function AuxiliarModal({ auxiliar, onClose, onSave }: {
   const [telefono, setTelefono] = useState(auxiliar?.telefono ?? "");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-4 text-lg font-semibold text-[#14352a]">{auxiliar ? "Editar auxiliar" : "Nuevo auxiliar"}</h3>
         <div className="flex flex-col gap-3">

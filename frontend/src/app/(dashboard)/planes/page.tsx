@@ -383,7 +383,7 @@ export default function DiagramaPage() {
 
       {/* Modal: planes Drivin */}
       {showPlanes && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowPlanes(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex shrink-0 items-center justify-between border-b border-[#eceef0] px-6 py-4">
               <h3 className="text-lg font-semibold text-[#14352a]">Planes en Drivin</h3>
@@ -427,7 +427,7 @@ export default function DiagramaPage() {
 
       {/* Modal: crear plan Drivin */}
       {planModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPlanModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-[#eceef0] px-6 py-4">
               <div>

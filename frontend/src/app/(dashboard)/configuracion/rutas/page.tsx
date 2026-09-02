@@ -164,7 +164,7 @@ function RutaModal({ ruta, onClose, onSave }: {
   const inputCls = "rounded-lg border border-[#dfe4e0] bg-white px-3 py-2.5 text-sm text-[#14352a] outline-none focus:border-[#2f8f4e]";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-4 text-lg font-semibold text-[#14352a]">{ruta ? "Editar ruta" : "Nueva ruta"}</h3>
         <div className="grid grid-cols-2 gap-3">

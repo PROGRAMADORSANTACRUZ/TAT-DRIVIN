@@ -820,7 +820,6 @@ export default function OrdenesPage() {
       {activeCategory && activeCat && (
         <div
           className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4 sm:p-6"
-          onClick={closeCategory}
         >
           <div
             className="flex max-h-[90vh] w-[95vw] max-w-[1600px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
@@ -1099,7 +1098,6 @@ export default function OrdenesPage() {
       {eliminarModalOpen && activeCat && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setEliminarModalOpen(false)}
         >
           <div
             className="w-full max-w-sm rounded-2xl bg-white shadow-xl"
@@ -1134,7 +1132,6 @@ export default function OrdenesPage() {
       {detalle && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setDetalle(null)}
         >
           <div
             className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-xl"
@@ -1228,7 +1225,6 @@ export default function OrdenesPage() {
       {verifModalOpen && verif && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setVerifModalOpen(false)}
         >
           <div
             className="flex max-h-[92vh] w-[95vw] max-w-[1500px] flex-col rounded-2xl bg-white shadow-xl"
@@ -1488,7 +1484,6 @@ export default function OrdenesPage() {
       {borrarCard && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
-          onClick={() => !deleting && setBorrarCard(null)}
         >
           <div
             className="w-full max-w-md rounded-2xl bg-white shadow-xl"
@@ -1536,7 +1531,6 @@ export default function OrdenesPage() {
       {eliminarSinRegTarget && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
-          onClick={() => !eliminandoSinReg && setEliminarSinRegTarget(null)}
         >
           <div
             className="w-full max-w-md rounded-2xl bg-white shadow-xl"
@@ -1696,7 +1690,6 @@ function AsignarClienteModal({
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
     >
       <div
         className="flex max-h-[80vh] w-full max-w-xl flex-col rounded-2xl bg-white shadow-xl"

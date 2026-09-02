@@ -42,7 +42,7 @@ function ImprimirModal({ planilla, onClose, onPrinted }: { planilla: Planilla; o
     onClose();
   }
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center gap-2">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#e8f3e2] text-[#2f8f4e]">
@@ -870,7 +870,7 @@ export default function PlanificacionDLPage() {
 
       {/* Modal confirmación anulación */}
       {confirmandoAnulacion && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setConfirmandoAnulacion(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fdf6e9] text-[#a86a12]">
@@ -910,7 +910,7 @@ export default function PlanificacionDLPage() {
 
       {/* Modal: Reporte de cambios */}
       {mostrarCambios && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setMostrarCambios(false)}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex shrink-0 items-center justify-between border-b border-[#eceef0] px-6 py-4">
               <div>
@@ -961,7 +961,7 @@ export default function PlanificacionDLPage() {
 
       {/* Modal de alerta: planillas pendientes de imprimir / reimprimir */}
       {alertaReimprimir && sinImprimir.length > 0 && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={() => setAlertaReimprimir(false)}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fdf6e9] text-[#a86a12]">
@@ -1001,7 +1001,7 @@ export default function PlanificacionDLPage() {
 
       {/* Eliminar plantilla completa */}
       {eliminando && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setEliminando(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-[#14352a]">Anular plantilla {dlLabel(eliminando.consecutivo)}</h3>
             <p className="mt-1 text-sm text-[#5f7a68]">
@@ -1167,7 +1167,7 @@ function EditarPlanillaModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between border-b border-[#eceef0] px-6 py-4">
           <div>
@@ -1339,7 +1339,7 @@ function QuitarRemisionModal({
     .sort((a, b) => Number(b.cabe) - Number(a.cabe) || a.v.placa.localeCompare(b.v.placa));
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" onClick={loading ? undefined : onClose}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
       <div className="flex max-h-[85vh] w-full max-w-xl flex-col rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-2 border-b border-[#eceef0] px-5 py-4">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#fbeceb] text-[#b3261e]">

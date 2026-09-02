@@ -213,7 +213,7 @@ export default function UsuariosPage() {
       </section>
 
       {modal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeModal}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="shrink-0 border-b border-[#eceef0] px-6 py-4">
               <h3 className="text-lg font-semibold text-[#14352a]">
