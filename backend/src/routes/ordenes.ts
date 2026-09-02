@@ -275,8 +275,11 @@ async function fetchPodEstados(
   const json = (await resp.json()) as { data?: PodItem[] };
   for (const item of json.data ?? []) {
     const a = item.attributes ?? {};
-    if (!a.alt_code) continue;
-    map.set(normCodigo(a.alt_code), {
+    // Se cruza por el código de la orden (a.code = numeroOrden), que es único
+    // por orden. El alt_code (cliente-destino) se repite entre entregas y
+    // marcaba órdenes nuevas como entregadas por error.
+    if (!a.code) continue;
+    map.set(normCodigo(a.code), {
       status: (a.status ?? "").toLowerCase(),
       podCode: a.code ?? null,
       scenarioToken: a.scenario_token ?? null,
@@ -885,7 +888,7 @@ router.post(
       }
 
       const data = ordenesConCodigo.map((o) => {
-        const pod = podEstados.get(normCodigo(`${o.cliente}-${o.destino}`));
+        const pod = podEstados.get(normCodigo(o.numeroOrden));
         return {
           ...o,
           distribucion: "AGROPECUARIA",
