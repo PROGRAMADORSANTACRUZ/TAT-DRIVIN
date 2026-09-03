@@ -1273,6 +1273,137 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
   }
 });
 
+// Convierte el NumFac del QR (ej. "FEP62162") al documento de Siesa.
+// Toma los dígitos tras las letras, rellena a 8 con ceros y antepone el prefijo
+// según la compañía: Agropecuaria -> "1FE-", Inversiones -> "FE-".
+function numFacADocumento(numFac: string, origen: string): string {
+  const digitos = String(numFac ?? "").replace(/\D/g, "");
+  if (!digitos) return "";
+  const pad = digitos.padStart(8, "0");
+  return (origen === "INVERSIONES" ? "FE-" : "1FE-") + pad;
+}
+
+// Limpia el tipo comercial "3202 - CANUTA COMESTIBLE" -> "CANUTA COMESTIBLE".
+function limpiarProductoTat(tipo: string): string {
+  const s = String(tipo ?? "").trim();
+  const m = /^\d+\s*-\s*(.+)$/.exec(s);
+  return (m ? m[1] : s).replace(/\s+/g, " ").trim();
+}
+
+// POST /api/ordenes/factura  -> consulta UNA factura en apiconsulta (Siesa) y la
+// guarda (acumula). Reemplaza el sync masivo vía SIGCOM. body: { origen, numFac, fecFac }
+router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res, next) => {
+  try {
+    const origen = String(req.body?.origen ?? "AGROPECUARIA").toUpperCase();
+    const cia = TAT_ORIGENES[origen];
+    if (!cia) throw new HttpError(400, "Origen inválido (AGROPECUARIA o INVERSIONES)");
+
+    const numFac = String(req.body?.numFac ?? "").trim();
+    const fecFac = String(req.body?.fecFac ?? "").trim().slice(0, 10);
+    if (!numFac) throw new HttpError(400, "Falta el número de factura (NumFac) del QR");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecFac)) throw new HttpError(400, "Fecha de factura (FecFac) inválida");
+
+    const documento = numFacADocumento(numFac, origen);
+    if (!documento) throw new HttpError(400, "No se pudo interpretar el número de factura");
+
+    const base = origen === "INVERSIONES" ? env.FACTURAS_INV_URL : env.FACTURAS_AGRO_URL;
+    const params = new URLSearchParams({
+      cia,
+      fecha_inicio: fecFac,
+      fecha_fin: fecFac,
+      documento,
+      ...(env.CLIENTES_TAT_TOKEN ? { token: env.CLIENTES_TAT_TOKEN } : {}),
+    });
+
+    let resp: Response;
+    try {
+      resp = await fetch(`${base}?${params}`, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch (err) {
+      const detalle = (err as Error)?.name ?? (err as Error)?.message ?? "desconocido";
+      throw new HttpError(502, `No se pudo conectar con Siesa (${detalle})`);
+    }
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      throw new HttpError(502, `Siesa respondió ${resp.status}: ${body.slice(0, 150)}`);
+    }
+
+    const json = (await resp.json()) as { data?: TatInvoice[] };
+    const filas = json.data ?? [];
+    if (filas.length === 0) {
+      throw new HttpError(404, `No se encontró la factura ${documento} en ${origen}`);
+    }
+
+    const nit = String(filas[0].cliente_factura ?? "").trim();
+    const numeroOrden = String(filas[0].nro_documento ?? documento).trim();
+
+    // Dirección/vendedor del maestro TAT por NIT (fallback si la factura no la trae).
+    const clienteTat = nit
+      ? await prisma.clienteTat.findFirst({
+          where: { nit, eliminado: false },
+          select: { direccion1: true, vendedor: true },
+        })
+      : null;
+    const dirMaestro = (clienteTat?.direccion1 ?? "").trim();
+
+    // Preserva el vehículo si esta factura ya estaba cargada.
+    const previa = await prisma.orden.findFirst({
+      where: { numeroOrden, distribucion: "TAT", tatOrigen: origen },
+      select: { asignadoVehiculo: true },
+    });
+    const vehiculo = previa?.asignadoVehiculo ?? null;
+
+    const codigo = nit ? claveNitSucursal(nit, filas[0].codigo_sucursal) : null;
+    const dirInv = String(filas[0].direccion_sucursal ?? "").trim();
+    const dirInvOk = dirInv.length >= 2 && !NO_DIRECCION_TAT.has(dirInv.toUpperCase());
+    const direccion = dirInvOk ? dirInv : (dirMaestro && esDireccionTatValida(dirMaestro) ? dirMaestro : null);
+    const destino = codigo ?? direccion ?? nit;
+
+    // Una línea por producto de la factura.
+    const lineas = filas.map((f) => ({
+      fecha: isoToDDMMYYYY(String(f.fecha_documento ?? "")),
+      numeroOrden,
+      cliente: String(f.razon_social_cliente ?? "").trim(),
+      destino,
+      producto: limpiarProductoTat(String(f.tipo_comercial ?? "")) || "MERCANCÍA",
+      cantidadKg: Number(f.cantidad_inv) || 0,
+      nit: codigo,
+      codigo,
+      direccion,
+      vendedor: clienteTat?.vendedor?.trim() ?? null,
+      valor: Number(f.valor_subtotal) || 0,
+      estado: "Pendiente",
+      distribucion: "TAT",
+      tatOrigen: origen,
+      asignadoVehiculo: vehiculo,
+    }));
+
+    // Reemplaza solo ESTA factura (idempotente al re-escanear), acumula el resto.
+    await prisma.$transaction([
+      prisma.orden.deleteMany({ where: { numeroOrden, distribucion: "TAT", tatOrigen: origen } }),
+      prisma.orden.createMany({ data: lineas }),
+    ]);
+
+    const totalKg = Math.round(lineas.reduce((s, l) => s + l.cantidadKg, 0) * 100) / 100;
+    const totalValor = Math.round(lineas.reduce((s, l) => s + l.valor, 0));
+    res.status(201).json({
+      numeroOrden,
+      cliente: lineas[0].cliente,
+      destino,
+      direccion,
+      productos: lineas.map((l) => ({ producto: l.producto, kg: l.cantidadKg, valor: l.valor })),
+      totalKg,
+      totalValor,
+      origen,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+
 // POST /api/ordenes/eliminar  -> elimina órdenes específicas por ids
 router.post("/eliminar", requireAuth, requirePermiso("/ordenes"), async (req, res, next) => {
   try {

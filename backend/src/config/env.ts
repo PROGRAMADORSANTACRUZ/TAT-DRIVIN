@@ -30,6 +30,15 @@ const envSchema = z.object({
   // Token de la API pública de despacho de SIGCOM (DISPATCH_API_TOKEN). Se envía
   // en el header x-api-key; sin él la API responde 401.
   TAT_INVOICES_TOKEN: z.string().optional(),
+  // Consulta directa a apiconsulta (Siesa) por factura: reemplaza el intermediario
+  // SIGCOM. Se consulta con ?cia=&fecha_inicio=&fecha_fin=&documento=&token=
+  // (el token es el mismo CLIENTES_TAT_TOKEN de apiconsulta).
+  FACTURAS_AGRO_URL: z
+    .string()
+    .default("https://apiconsulta.grupo-santacruz.com/ventas/facturas-agropecuaria-tat"),
+  FACTURAS_INV_URL: z
+    .string()
+    .default("https://apiconsulta.grupo-santacruz.com/ventas/facturas-tat-inversiones"),
 });
 
 const parsed = envSchema.safeParse(process.env);
