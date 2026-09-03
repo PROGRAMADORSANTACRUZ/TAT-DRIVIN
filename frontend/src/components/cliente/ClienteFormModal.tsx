@@ -11,7 +11,7 @@ import {
   type ClienteTat,
 } from "@/lib/api";
 import { tc } from "@/lib/utils";
-import DireccionInput, { TIPOS_VIA } from "./DireccionInput";
+import DireccionInput from "./DireccionInput";
 import MapaDireccion from "./MapaDireccion";
 import CiudadInput from "./CiudadInput";
 import { departamentoDeCiudad } from "@/data/colombia";
@@ -297,22 +297,6 @@ export default function ClienteFormModal({
 
               <Bloque titulo="Dirección">
                 <DireccionInput value={form.direccion} onChange={(v) => set("direccion", v)} />
-                <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <Campo label="Tipo de vía">
-                    <select value={form.tipoVia} onChange={(e) => set("tipoVia", e.target.value)} className={INPUT_CLS}>
-                      <option value="">—</option>
-                      {TIPOS_VIA.map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
-                  </Campo>
-                  <Campo label="Manzana">
-                    <input value={form.manzana} onChange={(e) => set("manzana", e.target.value)} placeholder="Ej. 5 / B" className={INPUT_CLS} />
-                  </Campo>
-                  <Campo label="Lote">
-                    <input value={form.lote} onChange={(e) => set("lote", e.target.value)} placeholder="Ej. 12" className={INPUT_CLS} />
-                  </Campo>
-                </div>
                 <div className="mt-3">
                   <Campo label="Referencia">
                     <input value={form.referencia} onChange={(e) => set("referencia", e.target.value)} placeholder="Ej. frente al parque, casa esquinera…" className={INPUT_CLS} />

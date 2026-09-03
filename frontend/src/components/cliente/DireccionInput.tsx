@@ -16,6 +16,8 @@ export const TIPOS_VIA = [
   "Avenida",
   "Autopista",
   "Vía",
+  "Manzana",
+  "Lote",
 ] as const;
 
 interface Partes {
