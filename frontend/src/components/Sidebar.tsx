@@ -169,7 +169,13 @@ const roleLabels: Record<string, string> = {
   DEVELOPER: "Desarrollador",
 };
 
-export default function Sidebar() {
+export default function Sidebar({
+  mobileOpen = false,
+  onClose = () => {},
+}: {
+  mobileOpen?: boolean;
+  onClose?: () => void;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -179,6 +185,10 @@ export default function Sidebar() {
   const [openDropdowns, setOpenDropdowns] = useState<Record<string, boolean>>({});
 
   useEffect(() => { setUser(getUser()); }, []);
+
+  // Cierra el drawer al navegar (en móvil).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onClose(); }, [pathname]);
 
   function toggleGroup(label: string) {
     setOpen((prev) => ({ ...prev, [label]: !prev[label] }));
@@ -200,9 +210,18 @@ export default function Sidebar() {
     .toUpperCase();
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-[#eceef0] bg-white">
-      {/* Marca */}
-      <div className="flex items-center gap-3 border-b border-[#eceef0] px-5 py-4">
+    <>
+      {/* Backdrop móvil */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={onClose} />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 flex h-screen w-64 shrink-0 transform flex-col border-r border-[#eceef0] bg-white transition-transform duration-200 lg:static lg:translate-x-0 ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        {/* Marca */}
+        <div className="flex items-center gap-3 border-b border-[#eceef0] px-5 py-4">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#f2f8ee] p-1.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.png" alt="Santacruz" className="h-full w-full object-contain" />
@@ -211,6 +230,13 @@ export default function Sidebar() {
           <p className="text-sm font-bold text-[#1f2937]">Santacruz</p>
           <p className="text-xs text-[#9aa4af]">Panel de gestión</p>
         </div>
+        <button
+          onClick={onClose}
+          aria-label="Cerrar menú"
+          className="ml-auto rounded-lg p-1.5 text-[#7a8794] hover:bg-[#f4f6f3] lg:hidden"
+        >
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 18 18 6M6 6l12 12" /></svg>
+        </button>
       </div>
 
       {/* Navegación */}
@@ -353,5 +379,6 @@ export default function Sidebar() {
         </button>
       </div>
     </aside>
+    </>
   );
 }
