@@ -164,20 +164,20 @@ export default function HistoricosPage() {
         ) : filtrado.length === 0 ? (
           <p className="p-8 text-center text-sm text-[#5f7a68]">No hay plantillas para el filtro.</p>
         ) : (
-          <div className="overflow-hidden">
-            <table className="w-full table-fixed text-left text-sm">
+          <div className="nice-scroll overflow-x-auto">
+            <table className="w-full min-w-[860px] table-auto text-left text-sm">
               <thead className="border-b border-[#eceef0] bg-[#f7faf5] text-xs uppercase tracking-wide text-[#7a8794]">
                 <tr>
-                  <th className="w-[9%] px-3 py-3 font-semibold">#</th>
-                  <th className="w-[9%] px-3 py-3 font-semibold">Fecha</th>
-                  <th className="w-[8%] px-3 py-3 font-semibold">Placa</th>
+                  <th className="px-3 py-3 font-semibold">#</th>
+                  <th className="px-3 py-3 font-semibold">Fecha</th>
+                  <th className="px-3 py-3 font-semibold">Placa</th>
                   <th className="px-3 py-3 font-semibold">Conductor</th>
                   <th className="px-3 py-3 font-semibold">Auxiliar</th>
                   <th className="px-3 py-3 font-semibold">Ruta</th>
-                  <th className="w-[10%] px-3 py-3 font-semibold">Tipo</th>
-                  <th className="w-[7%] px-3 py-3 text-right font-semibold">Docs</th>
-                  <th className="w-[10%] px-3 py-3 text-right font-semibold">Kilos</th>
-                  <th className="w-[11%] px-3 py-3 text-center font-semibold">Acciones</th>
+                  <th className="px-3 py-3 font-semibold">Tipo</th>
+                  <th className="px-3 py-3 text-right font-semibold">Docs</th>
+                  <th className="px-3 py-3 text-right font-semibold">Kilos</th>
+                  <th className="px-3 py-3 text-center font-semibold">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#f0f2ee]">
@@ -195,10 +195,10 @@ export default function HistoricosPage() {
                     </td>
                     <td className="whitespace-nowrap px-3 py-3 text-[#45505e]">{p.fecha || new Date(p.createdAt).toLocaleDateString("es-CO")}</td>
                     <td className="px-3 py-3"><span className="rounded bg-yellow-300 px-2 py-0.5 text-xs font-bold tracking-wider text-[#14352a] ring-1 ring-yellow-400">{p.placa}</span></td>
-                    <td className="px-3 py-3 text-[#45505e]">{p.conductor || "—"}</td>
-                    <td className="px-3 py-3 text-[#45505e]">{p.auxiliarRuta || "—"}</td>
-                    <td className="px-3 py-3 text-[#45505e]">{p.ruta || "—"}</td>
-                    <td className="px-3 py-3 text-[#45505e]">{p.tipoDespacho || "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-[#45505e]">{p.conductor || "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-[#45505e]">{p.auxiliarRuta || "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-[#45505e]">{p.ruta || "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-[#45505e]">{p.tipoDespacho || "—"}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-[#45505e]">{p.docs}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-[#14352a]">{fmtKg(p.kilos)}</td>
                     <td className="px-3 py-3">

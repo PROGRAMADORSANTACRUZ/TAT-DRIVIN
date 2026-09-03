@@ -346,7 +346,7 @@ export default function DashboardPage() {
           </div>
 
           {/* Fila 0: Accesos rápidos (botones pill debajo de los KPIs) */}
-          <div className="flex flex-nowrap gap-2 overflow-x-auto">
+          <div className="nice-scroll flex flex-nowrap gap-2 overflow-x-auto pb-1">
             {[
               { href: "/asignacion-vehiculos", label: "Asignación de órdenes", sub: `${m.sinAsig} sin asignar`, color: "bg-[#f7faf5]" },
               { href: "/planificacion-dl", label: "Planificación D.L.", sub: `${m.sinImpHoy} sin imprimir hoy`, color: "bg-[#f7faf5]" },
@@ -354,9 +354,9 @@ export default function DashboardPage() {
               { href: "/planes", label: "Diagrama", sub: `${m.conCarga} vehículos en ruta`, color: "bg-[#f7faf5]" },
               { href: "/ordenes", label: "Cargar órdenes", sub: `${m.totalOrdenes} en el sistema`, color: "bg-[#f7faf5]" },
             ].map((item) => (
-              <Link key={item.href} href={item.href} className={`flex min-w-0 flex-1 items-center justify-center gap-2 rounded-full border border-[#e1e9dd] ${item.color} px-3 py-2 transition-all hover:border-[#2f8f4e] hover:shadow-sm`}>
-                <span className="truncate text-xs font-semibold text-[#14352a]">{item.label}</span>
-                <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium text-[#7a8794]">{item.sub}</span>
+              <Link key={item.href} href={item.href} className={`flex shrink-0 items-center justify-center gap-2 rounded-full border border-[#e1e9dd] ${item.color} px-4 py-2 transition-all hover:border-[#2f8f4e] hover:shadow-sm lg:flex-1`}>
+                <span className="whitespace-nowrap text-xs font-semibold text-[#14352a]">{item.label}</span>
+                <span className="shrink-0 whitespace-nowrap rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-medium text-[#7a8794]">{item.sub}</span>
               </Link>
             ))}
           </div>

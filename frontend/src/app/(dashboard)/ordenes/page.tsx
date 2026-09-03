@@ -803,24 +803,24 @@ export default function OrdenesPage() {
           className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4 sm:p-6"
         >
           <div
-            className="flex max-h-[90vh] w-[95vw] max-w-[1600px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            className="flex max-h-[92vh] w-[99vw] max-w-[1600px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div
               className="h-1.5 w-full shrink-0"
               style={{ background: `linear-gradient(90deg, ${activeCat.color}, ${activeCat.color}99)` }}
             />
-            <div className="flex shrink-0 items-center gap-3 border-b border-[#eceef0] px-4 py-4 sm:px-6">
+            <div className="flex shrink-0 items-center gap-2.5 border-b border-[#eceef0] px-3 py-3 sm:gap-3 sm:px-6 sm:py-4">
               <div
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg font-bold ring-1 ring-inset ring-black/5"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-base font-bold ring-1 ring-inset ring-black/5 sm:h-11 sm:w-11 sm:rounded-2xl sm:text-lg"
                 style={{ backgroundColor: activeCat.bg, color: activeCat.color }}
               >
                 {activeCat.letter}
               </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-semibold text-[#14352a]">{activeCat.label}</h2>
-                  <span className="rounded-full bg-[#f0f2ee] px-2 py-0.5 text-xs font-medium text-[#5f7a68]">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <h2 className="truncate text-base font-semibold text-[#14352a] sm:text-lg">{activeCat.label}</h2>
+                  <span className="shrink-0 whitespace-nowrap rounded-full bg-[#f0f2ee] px-2 py-0.5 text-xs font-medium text-[#5f7a68]">
                     {pendientesGrupos.length} pendientes
                   </span>
                 </div>
@@ -828,7 +828,7 @@ export default function OrdenesPage() {
                   {activeCat.isTat ? "Distribución TAT" : "Distribución Agropecuaria"}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-1 sm:gap-2">
                 {activeCatOrdenes.length > 0 && (
                   <button
                     onClick={() => setEliminarModalOpen(true)}

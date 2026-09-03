@@ -565,8 +565,8 @@ export default function AsignacionVehiculosPage() {
         <div className="flex min-h-0 flex-1 flex-col gap-4">
           {/* Tabla de órdenes pendientes a todo el ancho y altura completa */}
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#e1e9dd] bg-white shadow-sm">
-              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[#eceef0] px-4 py-3">
-                <div className="flex items-center gap-3">
+              <div className="flex shrink-0 flex-col gap-2 border-b border-[#eceef0] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-sm font-semibold text-[#14352a]">
                     Órdenes pendientes ({sinAsignarGrupos.length})
                   </h2>
@@ -633,7 +633,7 @@ export default function AsignacionVehiculosPage() {
                   value={buscarOrd}
                   onChange={setBuscarOrd}
                   placeholder="Buscar orden…"
-                  className="w-56"
+                  className="w-full sm:w-56"
                 />
               </div>
               <div className="nice-scroll min-h-0 flex-1 overflow-auto">
