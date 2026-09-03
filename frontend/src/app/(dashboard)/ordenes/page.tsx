@@ -16,7 +16,6 @@ import {
   getClientesTat,
   getOrdenes,
   importOrdenes,
-  syncOrdenesTat,
   verificarClientesOrdenes,
   type Cliente,
   type ClienteSinRegistrar,
@@ -239,10 +238,9 @@ const IconUpload = () => (
     <polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
   </svg>
 );
-const IconSync = () => (
+const IconScan = () => (
   <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-    <path d="M3 22v-6h6" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+    <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M20 14v.01M14 20v.01M20 20v.01M17 17h.01"/>
   </svg>
 );
 const IconSpin = () => (
@@ -380,25 +378,6 @@ export default function OrdenesPage() {
       setError(err instanceof ApiError ? err.message : "Error al eliminar");
     } finally {
       setDeleting(false);
-    }
-  }
-
-  async function handleSyncTat(origen: "AGROPECUARIA" | "INVERSIONES") {
-    setSyncingTat(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const { importados, sinCodigo } = await syncOrdenesTat(origen);
-      const label = origen === "INVERSIONES" ? "Inversiones" : "Agropecuaria";
-      setMessage(
-        `Se sincronizaron ${importados} facturas TAT (${label}).` +
-          (sinCodigo ? ` ${sinCodigo} clientes sin código no guardados por falta de información.` : "")
-      );
-      await load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Error al sincronizar TAT");
-    } finally {
-      setSyncingTat(false);
     }
   }
 
@@ -713,13 +692,13 @@ export default function OrdenesPage() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (cat.isTat && cat.syncOrigen) handleSyncTat(cat.syncOrigen);
+                              if (cat.isTat && cat.syncOrigen) setScanOrigen(cat.syncOrigen);
                               else if (cat.tipo) triggerImport(cat.tipo);
                             }}
-                            disabled={importing || syncingTat}
+                            disabled={importing}
                             className="rounded-lg border border-[#e1e9dd] px-3.5 py-2 text-xs font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]"
                           >
-                            {cat.isTat ? "Sincronizar" : "Importar"}
+                            {cat.isTat ? "Leer factura" : "Importar"}
                           </button>
                         </div>
                       </div>
@@ -745,21 +724,21 @@ export default function OrdenesPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (cat.isTat && cat.syncOrigen) handleSyncTat(cat.syncOrigen);
+                          if (cat.isTat && cat.syncOrigen) setScanOrigen(cat.syncOrigen);
                           else if (cat.tipo) triggerImport(cat.tipo);
                         }}
-                        disabled={importing || syncingTat}
+                        disabled={importing}
                         className="mt-auto flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
                         style={{ backgroundColor: cardColor }}
                       >
-                        {importing || syncingTat ? (
+                        {importing ? (
                           <IconSpin />
                         ) : cat.isTat ? (
-                          <IconSync />
+                          <IconScan />
                         ) : (
                           <IconUpload />
                         )}
-                        {cat.isTat ? "Sincronizar TAT" : "Montar plan"}
+                        {cat.isTat ? "Leer factura" : "Montar plan"}
                       </button>
                     </>
                   )}
@@ -861,23 +840,13 @@ export default function OrdenesPage() {
                   </button>
                 )}
                 {activeCat.isTat ? (
-                  <>
-                    <button
-                      onClick={() => activeCat.syncOrigen && setScanOrigen(activeCat.syncOrigen)}
-                      className={btn}
-                    >
-                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M20 14v.01M14 20v.01M20 20v.01M17 17h.01M17 20h.01M20 17h.01"/></svg>
-                      Leer factura
-                    </button>
-                    <button
-                      onClick={() => activeCat.syncOrigen && handleSyncTat(activeCat.syncOrigen)}
-                      disabled={syncingTat}
-                      className={btn}
-                    >
-                      {syncingTat ? <IconSpin /> : <IconSync />}
-                      {syncingTat ? "Sincronizando…" : "Sincronizar"}
-                    </button>
-                  </>
+                  <button
+                    onClick={() => activeCat.syncOrigen && setScanOrigen(activeCat.syncOrigen)}
+                    className={btn}
+                  >
+                    <IconScan />
+                    Leer factura
+                  </button>
                 ) : (
                   <button
                     onClick={() => activeCat.tipo && triggerImport(activeCat.tipo)}

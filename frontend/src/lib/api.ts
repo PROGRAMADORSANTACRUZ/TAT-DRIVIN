@@ -273,18 +273,6 @@ export function verificarClientesOrdenes(): Promise<VerificacionClientes> {
   return request<VerificacionClientes>("/api/ordenes/verificar-clientes");
 }
 
-export function syncOrdenesTat(
-  origen: "AGROPECUARIA" | "INVERSIONES"
-): Promise<{ importados: number; sinCodigo?: number; origen: string }> {
-  return request<{ importados: number; sinCodigo?: number; origen: string }>(
-    "/api/ordenes/sync-tat",
-    {
-      method: "POST",
-      body: JSON.stringify({ origen }),
-    }
-  );
-}
-
 export interface FacturaResult {
   numeroOrden: string;
   cliente: string;
