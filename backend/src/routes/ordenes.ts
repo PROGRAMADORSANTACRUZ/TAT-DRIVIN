@@ -1094,6 +1094,12 @@ interface TatInvoice {
   tipo_comercial?: string;
   cantidad_inv?: number;
   valor_subtotal?: number;
+  // Desglose por producto (una entrada por tipo comercial de la factura).
+  productos?: {
+    tipo_comercial?: string;
+    cantidad_inv?: number;
+    valor_subtotal?: number;
+  }[];
 }
 
 // Identificador de cliente TAT por sucursal: NIT-<entero de sucursal>.
@@ -1203,7 +1209,7 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
     const sinCodigo = filas.filter((f) => !f.nro_documento).length;
     const data = filas
       .filter((f) => f.nro_documento)
-      .map((f) => {
+      .flatMap((f) => {
         const numeroOrden = String(f.nro_documento);
         const nit = String(f.cliente_factura ?? "").trim();
         // Identidad por sucursal: NIT-<entero>. Es el NIT que se guarda (nit-sucursal).
@@ -1214,26 +1220,38 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
         const direccion = dirInvOk ? dirInv : dirPorNit.get(nit) ?? null;
         // El destino (clave de agrupación/cruce) distingue cada sucursal por su código.
         const destino = codigo ?? direccion ?? nit;
-        return {
+        const base = {
           fecha: isoToDDMMYYYY(String(f.fecha_documento ?? "")),
           numeroOrden,
           cliente: String(f.razon_social_cliente ?? "").trim(),
           destino,
-          // Inversiones (cia 8) no envía tipo_comercial: se usa un fallback para
-          // que la orden tenga descripción de producto (y no quede vacía).
-          producto: String(f.tipo_comercial ?? "").trim() || "MERCANCÍA",
-          cantidadKg: Number(f.cantidad_inv) || 0,
           // El NIT guardado es NIT-sucursal (identidad única del cliente por sucursal).
           nit: codigo,
           codigo,
           direccion,
           vendedor: vendedorPorNit.get(nit) ?? null,
-          valor: Number(f.valor_subtotal) || 0,
           estado: "Pendiente",
           distribucion: "TAT",
           tatOrigen: origen,
           asignadoVehiculo: asignPorNumero.get(numeroOrden) ?? null,
         };
+        // Desglose por producto: una línea por tipo comercial (como Bovino/Porcino).
+        const productos = (f.productos ?? []).filter((p) => String(p.tipo_comercial ?? "").trim());
+        if (productos.length > 0) {
+          return productos.map((p) => ({
+            ...base,
+            producto: String(p.tipo_comercial ?? "").trim(),
+            cantidadKg: Number(p.cantidad_inv) || 0,
+            valor: Number(p.valor_subtotal) || 0,
+          }));
+        }
+        // Sin desglose: una sola línea con el resumen (fallback "MERCANCÍA").
+        return [{
+          ...base,
+          producto: String(f.tipo_comercial ?? "").trim() || "MERCANCÍA",
+          cantidadKg: Number(f.cantidad_inv) || 0,
+          valor: Number(f.valor_subtotal) || 0,
+        }];
       });
 
     // La API no trae facturas para este origen: no es error, no borra lo existente.
@@ -1247,7 +1265,9 @@ router.post("/sync-tat", requireAuth, requirePermiso("/ordenes"), async (req, re
       prisma.orden.createMany({ data }),
     ]);
 
-    res.status(201).json({ importados: data.length, sinCodigo, origen });
+    // Cuenta facturas (no líneas) para el mensaje.
+    const importados = new Set(data.map((d) => d.numeroOrden)).size;
+    res.status(201).json({ importados, sinCodigo, origen });
   } catch (err) {
     next(err);
   }
