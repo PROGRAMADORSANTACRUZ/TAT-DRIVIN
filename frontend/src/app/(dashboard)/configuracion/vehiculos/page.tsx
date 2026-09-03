@@ -81,7 +81,7 @@ export default function VehiculosPage() {
     : vehiculos;
 
   return (
-    <div className="flex h-full flex-col p-6 sm:p-8">
+    <div className="flex h-full flex-col p-4 sm:p-6 lg:p-8">
       <header className="mb-6 flex shrink-0 flex-col gap-1">
         <h1 className="text-2xl font-bold text-[#14352a]">Vehículos</h1>
         <p className="text-sm text-[#5f7a68]">

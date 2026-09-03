@@ -98,7 +98,7 @@ export default function HistoricosPage() {
   const totalDocs  = useMemo(() => filtrado.reduce((s, p) => s + p.docs,  0), [filtrado]);
 
   return (
-    <div className="flex min-h-full flex-col p-6 sm:p-8">
+    <div className="flex min-h-full flex-col p-4 sm:p-6 lg:p-8">
       <header className="mb-5 flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[#14352a]">Históricos de plantillas</h1>

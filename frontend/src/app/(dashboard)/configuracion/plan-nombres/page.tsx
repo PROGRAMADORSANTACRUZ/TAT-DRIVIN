@@ -69,7 +69,7 @@ export default function PlanNombresPage() {
   const hoy = new Date().toLocaleDateString("es-CO");
 
   return (
-    <div className="flex h-full flex-col p-6 sm:p-8">
+    <div className="flex h-full flex-col p-4 sm:p-6 lg:p-8">
       <header className="mb-6 flex shrink-0 items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-[#14352a]">Nombres de planes</h1>

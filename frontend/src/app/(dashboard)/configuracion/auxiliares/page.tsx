@@ -61,7 +61,7 @@ export default function AuxiliaresPage() {
   );
 
   return (
-    <div className="flex h-full flex-col overflow-hidden p-6 sm:p-8">
+    <div className="flex h-full flex-col overflow-hidden p-4 sm:p-6 lg:p-8">
       <header className="mb-5 flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-[#14352a]">Auxiliares de ruta</h1>

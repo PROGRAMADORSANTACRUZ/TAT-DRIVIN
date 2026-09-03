@@ -335,7 +335,7 @@ export default function NivelServicioPage() {
   }
 
   return (
-    <div className="flex min-h-full flex-col p-6 sm:p-8">
+    <div className="flex min-h-full flex-col p-4 sm:p-6 lg:p-8">
       {/* Header */}
       <header className="mb-5 flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
