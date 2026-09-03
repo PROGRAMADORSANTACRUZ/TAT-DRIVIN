@@ -62,7 +62,7 @@ function claveNitSucursal(nit: string, sucursal: string | null): string {
 }
 
 // Construye el payload del escenario a partir de las órdenes asignadas en BD.
-async function buildScenarioPayload(opts: {
+export async function buildScenarioPayload(opts: {
   descripcion: string;
   fecha: string;
   schemaName: string;
