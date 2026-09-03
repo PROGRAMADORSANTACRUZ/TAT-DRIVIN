@@ -268,17 +268,25 @@ export async function buildScenarioPayload(opts: {
     const city = asignado?.ciudad || geo?.ciudad || clienteGS || destino;
     const orders = [];
     for (const [numeroOrden, lineas] of pedidos) {
-      // Agrupa por producto y suma los kg.
-      const productMap = new Map<string, number>();
+      // Agrupa por producto: suma kg y valor (para el recaudo por ítem).
+      const productMap = new Map<string, { kg: number; valor: number }>();
       for (const l of lineas) {
         const k = l.producto || "Sin descripción";
-        productMap.set(k, (productMap.get(k) ?? 0) + l.cantidadKg);
+        const cur = productMap.get(k) ?? { kg: 0, valor: 0 };
+        cur.kg += l.cantidadKg;
+        cur.valor += l.valor ?? 0;
+        productMap.set(k, cur);
       }
-      // Drivin muestra `units` como "CANT" en el detalle: enviamos los kg ahí
-      // (y también en units_1, que es la capacidad/peso del ítem).
-      const items = Array.from(productMap.entries()).map(([desc, kg], i) => {
+      // Drivin muestra `units` como "CANT" (kg) y lee el recaudo por ítem en custom_3.
+      const items = Array.from(productMap.entries()).map(([desc, { kg, valor }], i) => {
         const kgR = Math.round(kg * 100) / 100;
-        return { code: `${numeroOrden}-${i + 1}`, description: desc, units: kgR, units_1: kgR };
+        return {
+          code: `${numeroOrden}-${i + 1}`,
+          description: desc,
+          units: kgR,
+          units_1: kgR,
+          custom_3: String(Math.round(valor)),
+        };
       });
       const totalKg = Math.round(lineas.reduce((s, l) => s + l.cantidadKg, 0) * 100) / 100;
       // Total de dinero de la remisión (recaudo). Drivin lo lee en custom_3.
