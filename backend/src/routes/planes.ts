@@ -90,8 +90,26 @@ async function buildScenarioPayload(opts: {
       codigoTercero: true, nit: true, sucursal: true, razonSocial: true,
       direccion1: true, ciudad: true, departamento: true, pais: true,
       lat: true, lon: true, consecutivos: true,
+      referencia: true, telefono: true, celular: true, correo: true,
     },
   });
+
+  // Índice de contacto TAT por código (NIT-sucursal): referencia y contacto.
+  const tatInfoPorCodigo = new Map<
+    string,
+    { referencia: string | null; telefono: string | null; correo: string | null; departamento: string | null }
+  >();
+  for (const c of clientesTat) {
+    if (!c.nit) continue;
+    const cod = claveNitSucursal(c.nit, c.sucursal);
+    if (tatInfoPorCodigo.has(cod)) continue;
+    tatInfoPorCodigo.set(cod, {
+      referencia: c.referencia ?? null,
+      telefono: c.telefono ?? c.celular ?? null,
+      correo: c.correo ?? null,
+      departamento: c.departamento ?? null,
+    });
+  }
 
   // Direcciones registradas en Drivin + el maestro GS (para asignar el código
   // correcto por cliente/destino, aunque Drivin no tenga registrado al cliente).
@@ -115,6 +133,10 @@ async function buildScenarioPayload(opts: {
     pais: string | null;
     lat: string | null;
     lon: string | null;
+    referencia: string | null;
+    telefono: string | null;
+    correo: string | null;
+    departamento: string | null;
   };
   const geoMap = new Map<string, GeoEntry>();
   const geoByDest = new Map<string, GeoEntry>();
@@ -127,6 +149,10 @@ async function buildScenarioPayload(opts: {
       pais: c.pais,
       lat: c.lat,
       lon: c.lon,
+      referencia: c.referencia ?? null,
+      telefono: c.telefono ?? null,
+      correo: c.correo ?? null,
+      departamento: c.region ?? c.provincia ?? null,
     };
     if (c.cliente && c.nombreDireccion)
       geoMap.set(`${normKey(c.cliente)}||${normKey(c.nombreDireccion)}`, entry);
@@ -142,6 +168,7 @@ async function buildScenarioPayload(opts: {
   type ClienteInfo = {
     nombre?: string; direccion?: string; codigo?: string;
     ciudad?: string | null; pais?: string | null; lat?: string | null; lng?: string | null;
+    referencia?: string | null; telefono?: string | null; correo?: string | null; departamento?: string | null;
   };
   const porNitConcat = new Map<string, ClienteInfo>();
   const porConsecutivo = new Map<string, ClienteInfo>();
@@ -165,6 +192,10 @@ async function buildScenarioPayload(opts: {
       pais: c.pais,
       lat: c.lat,
       lng: c.lon,
+      referencia: c.referencia ?? null,
+      telefono: c.telefono ?? null,
+      correo: c.correo ?? null,
+      departamento: c.region ?? c.provincia ?? null,
     });
   }
   for (const c of clientesTat) {
@@ -176,6 +207,10 @@ async function buildScenarioPayload(opts: {
       pais: c.pais,
       lat: c.lat,
       lng: c.lon,
+      referencia: c.referencia ?? null,
+      telefono: c.telefono ?? c.celular ?? null,
+      correo: c.correo ?? null,
+      departamento: c.departamento ?? null,
     });
   }
 
@@ -248,12 +283,22 @@ async function buildScenarioPayload(opts: {
       const totalKg = Math.round(lineas.reduce((s, l) => s + l.cantidadKg, 0) * 100) / 100;
       // Total de dinero de la remisión (recaudo). Drivin lo lee en custom_3.
       const totalValor = Math.round(lineas.reduce((s, l) => s + (l.valor ?? 0), 0));
+      // Fecha de venta (DD/MM/YYYY -> YYYY-MM-DD) para billing_date.
+      const fm = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(lineas[0].fecha ?? "");
+      const ventaISO = fm ? `${fm[3]}-${fm[2]}-${fm[1]}` : undefined;
+      const vendedor = lineas[0].vendedor?.trim() || undefined;
+      const distribLabel = lineas[0].distribucion === "TAT"
+        ? `TAT ${lineas[0].tatOrigen ?? ""}`.trim()
+        : "AGROPECUARIA";
       orders.push({
         code: numeroOrden,
         alt_code: `${normKey(cliente)}-${normKey(destino)}`,
+        description: vendedor ? titleCase(vendedor) : undefined,
+        billing_date: ventaISO,
         units: totalKg,
         units_1: totalKg,
         custom_3: String(totalValor),
+        custom_6: distribLabel,
         vehicle_code: lineas[0].asignadoVehiculo,
         items,
       });
@@ -265,16 +310,27 @@ async function buildScenarioPayload(opts: {
     // Código de la dirección/cliente: identifica la dirección en el maestro de
     // Drivin. Debe ir como `code` (identificador de la dirección) y `client_code`.
     const codigoFinal = asignado?.codigo ?? codigoTat ?? drivinMatch?.code ?? null;
+    // Contacto/referencia: primero el del concatenado, luego GS, luego TAT.
+    const tatInfo = codigoTat ? tatInfoPorCodigo.get(codigoTat) : undefined;
+    const referencia = asignado?.referencia ?? geo?.referencia ?? tatInfo?.referencia ?? null;
+    const telefono = asignado?.telefono ?? geo?.telefono ?? tatInfo?.telefono ?? null;
+    const correo = asignado?.correo ?? geo?.correo ?? tatInfo?.correo ?? null;
+    const departamento = asignado?.departamento ?? geo?.departamento ?? tatInfo?.departamento ?? null;
     clients.push({
       code: codigoFinal,
       name: titleCase(nombreFinal),
       client_name: titleCase(nombreFinal),
       client_code: codigoFinal,
       address: titleCase(asignado?.direccion ?? direccionTat ?? drivinMatch?.address1 ?? geo?.direccion ?? destino),
+      reference: referencia ? titleCase(referencia) : undefined,
       city: titleCase(city),
+      state: departamento ? titleCase(departamento) : undefined,
       country: asignado?.pais ?? geo?.pais ?? "Colombia",
       lat: latStr ? parseFloat(latStr) : null,
       lng: lngStr ? parseFloat(lngStr) : null,
+      contact_name: titleCase(nombreFinal),
+      contact_phone: telefono ?? undefined,
+      contact_email: correo ?? undefined,
       orders,
     });
   }
