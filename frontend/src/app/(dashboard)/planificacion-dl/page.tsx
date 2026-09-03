@@ -587,7 +587,7 @@ export default function PlanificacionDLPage() {
       {loading ? (
         <div className="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row">
           {/* Skeleton panel izquierdo */}
-          <div className="flex min-h-0 w-full flex-col gap-2 lg:w-[380px] lg:shrink-0">
+          <div className="flex min-h-0 w-full min-w-0 flex-col gap-2 lg:w-[380px] lg:shrink-0">
             <div className="flex-1 overflow-hidden rounded-2xl border border-[#e1e9dd] bg-white p-3 shadow-sm">
               <div className="mb-3 h-4 w-24 animate-pulse rounded-full bg-[#e8ecea]" />
               <div className="grid grid-cols-2 gap-2">
@@ -614,7 +614,7 @@ export default function PlanificacionDLPage() {
         <div className="flex min-h-0 flex-1 flex-col gap-5 lg:flex-row">
 
           {/* ── PANEL IZQUIERDO ───────────────────────────────── */}
-          <div className="flex min-h-0 w-full flex-col gap-4 lg:w-[380px] lg:shrink-0">
+          <div className="flex min-h-0 w-full min-w-0 flex-col gap-4 lg:w-[380px] lg:shrink-0">
 
             {/* Despachos — grid 2 columnas */}
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#e1e9dd] bg-white shadow-sm">
