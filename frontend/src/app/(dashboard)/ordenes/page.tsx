@@ -810,7 +810,7 @@ export default function OrdenesPage() {
               className="h-1.5 w-full shrink-0"
               style={{ background: `linear-gradient(90deg, ${activeCat.color}, ${activeCat.color}99)` }}
             />
-            <div className="flex shrink-0 items-center gap-3 border-b border-[#eceef0] px-6 py-4">
+            <div className="flex shrink-0 items-center gap-3 border-b border-[#eceef0] px-4 py-4 sm:px-6">
               <div
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg font-bold ring-1 ring-inset ring-black/5"
                 style={{ backgroundColor: activeCat.bg, color: activeCat.color }}
@@ -836,7 +836,7 @@ export default function OrdenesPage() {
                     className={btn}
                   >
                     <IconTrash />
-                    {deleting ? "Eliminando…" : "Eliminar"}
+                    <span className="hidden sm:inline">{deleting ? "Eliminando…" : "Eliminar"}</span>
                   </button>
                 )}
                 {activeCat.isTat ? (
@@ -845,7 +845,7 @@ export default function OrdenesPage() {
                     className={btn}
                   >
                     <IconScan />
-                    Leer factura
+                    <span className="hidden sm:inline">Leer factura</span>
                   </button>
                 ) : (
                   <button
@@ -854,7 +854,7 @@ export default function OrdenesPage() {
                     className={btn}
                   >
                     {importing ? <IconSpin /> : <IconUpload />}
-                    {importing ? "Importando…" : "Importar"}
+                    <span className="hidden sm:inline">{importing ? "Importando…" : "Importar"}</span>
                   </button>
                 )}
                 <button
@@ -873,22 +873,22 @@ export default function OrdenesPage() {
               </div>
             )}
 
-            <div className="flex shrink-0 flex-wrap items-end gap-3 border-b border-[#eceef0] px-6 py-4">
-              <div className="flex flex-col gap-1">
+            <div className="flex shrink-0 flex-wrap items-end gap-3 border-b border-[#eceef0] px-4 py-4 sm:px-6">
+              <div className="flex w-full flex-col gap-1 sm:w-auto">
                 <span className="text-xs font-medium text-[#7a8794]">Buscar</span>
                 <SearchInput
                   value={search}
                   onChange={setSearch}
                   placeholder="Orden, destino, producto…"
-                  className="w-64"
+                  className="w-full sm:w-64"
                 />
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex w-full flex-col gap-1 sm:w-auto">
                 <span className="text-xs font-medium text-[#7a8794]">Cliente</span>
                 <select
                   value={clienteFiltro}
                   onChange={(e) => setClienteFiltro(e.target.value)}
-                  className="w-52 rounded-lg border border-[#dfe4e0] bg-white px-3 py-2.5 text-sm text-[#14352a] outline-none transition focus:border-[#2f8f4e] focus:ring-2 focus:ring-[#2f8f4e]/20"
+                  className="w-full rounded-lg border border-[#dfe4e0] bg-white px-3 py-2.5 text-sm text-[#14352a] outline-none transition focus:border-[#2f8f4e] focus:ring-2 focus:ring-[#2f8f4e]/20 sm:w-52"
                 >
                   <option value="">Todos</option>
                   {clientesUnicos.map((c) => (

@@ -130,7 +130,7 @@ export default function HistoricosPage() {
 
       <div className="flex flex-col overflow-hidden rounded-2xl border border-[#e1e9dd] bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eceef0] px-4 py-3">
-          <SearchInput value={buscar} onChange={setBuscar} placeholder="Buscar consecutivo, placa, conductor, ruta…" className="w-72" />
+          <SearchInput value={buscar} onChange={setBuscar} placeholder="Buscar consecutivo, placa, conductor, ruta…" className="w-full sm:w-72" />
           <div className="flex items-center gap-2 text-sm">
             <label className="flex items-center gap-1.5 text-[#7a8794]">
               Desde <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="rounded-lg border border-[#dfe4e0] bg-white px-2 py-1.5 text-sm text-[#14352a] outline-none focus:border-[#2f8f4e]" />

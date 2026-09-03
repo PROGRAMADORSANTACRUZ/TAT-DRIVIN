@@ -326,7 +326,7 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-2.5">
 
           {/* Row 1: KPIs principales */}
-          <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
             <StatCard label="Órdenes activas" value={fmtN(m.vivas)} sub={`${fmtKg(m.kilosVivas)} kg total`}
               icon={<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>} />
             <StatCard label="Sin asignar" value={fmtN(m.sinAsig)} sub="pendientes de vehículo"

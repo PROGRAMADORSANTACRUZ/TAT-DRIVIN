@@ -86,7 +86,7 @@ export default function AuxiliaresPage() {
           value={buscar}
           onChange={(e) => setBuscar(e.target.value)}
           placeholder="Buscar por nombre o teléfono…"
-          className="w-72 rounded-lg border border-[#dfe4e0] bg-white px-3 py-2 text-sm text-[#14352a] outline-none focus:border-[#2f8f4e]"
+          className="w-full sm:w-72 rounded-lg border border-[#dfe4e0] bg-white px-3 py-2 text-sm text-[#14352a] outline-none focus:border-[#2f8f4e]"
         />
         <span className="ml-3 text-xs text-[#7a8794]">{filtrado.length} auxiliares</span>
       </div>

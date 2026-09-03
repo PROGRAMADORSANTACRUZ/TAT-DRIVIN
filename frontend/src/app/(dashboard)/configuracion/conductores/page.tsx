@@ -301,7 +301,7 @@ function AuxiliaresModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {(creando || editando) && (
-          <div className="shrink-0 grid grid-cols-2 gap-3 border-b border-[#eceef0] px-6 py-3">
+          <div className="shrink-0 grid grid-cols-1 gap-3 border-b border-[#eceef0] px-6 py-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1">
               <span className="text-xs font-medium text-[#7a8794]">Nombre *</span>
               <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Aux. Juan Pérez" className="rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm text-[#14352a] outline-none focus:border-[#2f8f4e]" />

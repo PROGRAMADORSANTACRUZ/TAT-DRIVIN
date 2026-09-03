@@ -395,7 +395,7 @@ export default function NivelServicioPage() {
       {/* Tabla */}
       <div className="flex flex-col overflow-hidden rounded-2xl border border-[#e1e9dd] bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eceef0] px-4 py-3">
-          <SearchInput value={buscar} onChange={setBuscar} placeholder="Buscar placa, conductor, orden, cliente…" className="w-72" />
+          <SearchInput value={buscar} onChange={setBuscar} placeholder="Buscar placa, conductor, orden, cliente…" className="w-full sm:w-72" />
           <span className="text-xs text-[#7a8794]">{rowsFiltrados.length} remisiones</span>
         </div>
 

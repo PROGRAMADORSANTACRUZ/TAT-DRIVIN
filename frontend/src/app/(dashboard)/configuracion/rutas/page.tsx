@@ -167,7 +167,7 @@ function RutaModal({ ruta, onClose, onSave }: {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="mb-4 text-lg font-semibold text-[#14352a]">{ruta ? "Editar ruta" : "Nueva ruta"}</h3>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1 col-span-2">
             <span className="text-xs font-medium text-[#7a8794]">Nombre *</span>
             <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej. R1 - PDV CASA" className={inputCls} />
