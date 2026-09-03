@@ -285,6 +285,30 @@ export function syncOrdenesTat(
   );
 }
 
+export interface FacturaResult {
+  numeroOrden: string;
+  cliente: string;
+  destino: string;
+  direccion: string | null;
+  productos: { producto: string; kg: number; valor: number }[];
+  totalKg: number;
+  totalValor: number;
+  origen: string;
+}
+
+// Consulta una factura directo en Siesa (apiconsulta) por su NumFac/FecFac del QR
+// y la guarda (acumula) como orden TAT.
+export function consultarFactura(
+  origen: "AGROPECUARIA" | "INVERSIONES",
+  numFac: string,
+  fecFac: string
+): Promise<FacturaResult> {
+  return request<FacturaResult>("/api/ordenes/factura", {
+    method: "POST",
+    body: JSON.stringify({ origen, numFac, fecFac }),
+  });
+}
+
 export function deleteOrdenes(
   tipo?: "B" | "P" | "I" | "AGRO" | "TAT" | "TATAGRO" | "TATINV"
 ): Promise<{ eliminados: number }> {

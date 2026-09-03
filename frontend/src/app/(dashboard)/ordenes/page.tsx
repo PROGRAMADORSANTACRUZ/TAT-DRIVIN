@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { tc, btn } from "@/lib/utils";
 import SearchInput from "@/components/SearchInput";
 import ClienteFormModal from "@/components/cliente/ClienteFormModal";
+import FacturaScanModal from "@/components/ordenes/FacturaScanModal";
 import {
   ApiError,
   asignarConsecutivo,
@@ -301,6 +302,7 @@ export default function OrdenesPage() {
   const [eliminandoSinReg, setEliminandoSinReg] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tipoRef = useRef<"B" | "P" | "I" | null>(null);
+  const [scanOrigen, setScanOrigen] = useState<"AGROPECUARIA" | "INVERSIONES" | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -859,14 +861,23 @@ export default function OrdenesPage() {
                   </button>
                 )}
                 {activeCat.isTat ? (
-                  <button
-                    onClick={() => activeCat.syncOrigen && handleSyncTat(activeCat.syncOrigen)}
-                    disabled={syncingTat}
-                    className={btn}
-                  >
-                    {syncingTat ? <IconSpin /> : <IconSync />}
-                    {syncingTat ? "Sincronizando…" : "Sincronizar"}
-                  </button>
+                  <>
+                    <button
+                      onClick={() => activeCat.syncOrigen && setScanOrigen(activeCat.syncOrigen)}
+                      className={btn}
+                    >
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M20 14v.01M14 20v.01M20 20v.01M17 17h.01M17 20h.01M20 17h.01"/></svg>
+                      Leer factura
+                    </button>
+                    <button
+                      onClick={() => activeCat.syncOrigen && handleSyncTat(activeCat.syncOrigen)}
+                      disabled={syncingTat}
+                      className={btn}
+                    >
+                      {syncingTat ? <IconSpin /> : <IconSync />}
+                      {syncingTat ? "Sincronizando…" : "Sincronizar"}
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={() => activeCat.tipo && triggerImport(activeCat.tipo)}
@@ -1418,6 +1429,14 @@ export default function OrdenesPage() {
           clientesTat={clientesTatDb}
           onClose={() => setAsignarTarget(null)}
           onAsignar={handleAsignar}
+        />
+      )}
+
+      {scanOrigen && (
+        <FacturaScanModal
+          origen={scanOrigen}
+          onClose={() => { setScanOrigen(null); load(); }}
+          onSaved={() => load()}
         />
       )}
 
