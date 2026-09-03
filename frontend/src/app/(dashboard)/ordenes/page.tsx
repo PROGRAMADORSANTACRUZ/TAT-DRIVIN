@@ -800,7 +800,7 @@ export default function OrdenesPage() {
       {/* ── Modal de categoría ── */}
       {activeCategory && activeCat && (
         <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4 sm:p-6"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 sm:p-6"
         >
           <div
             className="flex max-h-[92vh] w-[99vw] max-w-[1600px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
@@ -1077,7 +1077,7 @@ export default function OrdenesPage() {
 
       {eliminarModalOpen && activeCat && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4"
         >
           <div
             className="w-full max-w-sm rounded-2xl bg-white shadow-xl"
@@ -1111,7 +1111,7 @@ export default function OrdenesPage() {
 
       {detalle && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4"
         >
           <div
             className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl bg-white shadow-xl"
@@ -1204,7 +1204,7 @@ export default function OrdenesPage() {
 
       {verifModalOpen && verif && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4"
         >
           <div
             className="flex max-h-[92vh] w-[95vw] max-w-[1500px] flex-col rounded-2xl bg-white shadow-xl"
@@ -1518,7 +1518,7 @@ export default function OrdenesPage() {
       {/* Modal: confirmar eliminación de órdenes de un cliente sin registrar */}
       {eliminarSinRegTarget && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4"
         >
           <div
             className="w-full max-w-md rounded-2xl bg-white shadow-xl"
@@ -1677,7 +1677,7 @@ function AsignarClienteModal({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4"
     >
       <div
         className="flex max-h-[80vh] w-full max-w-xl flex-col rounded-2xl bg-white shadow-xl"
