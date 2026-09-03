@@ -246,11 +246,14 @@ async function buildScenarioPayload(opts: {
         return { code: `${numeroOrden}-${i + 1}`, description: desc, units: kgR, units_1: kgR };
       });
       const totalKg = Math.round(lineas.reduce((s, l) => s + l.cantidadKg, 0) * 100) / 100;
+      // Total de dinero de la remisión (recaudo). Drivin lo lee en custom_3.
+      const totalValor = Math.round(lineas.reduce((s, l) => s + (l.valor ?? 0), 0));
       orders.push({
         code: numeroOrden,
         alt_code: `${normKey(cliente)}-${normKey(destino)}`,
         units: totalKg,
         units_1: totalKg,
+        custom_3: String(totalValor),
         vehicle_code: lineas[0].asignadoVehiculo,
         items,
       });
