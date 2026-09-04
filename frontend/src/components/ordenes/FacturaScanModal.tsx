@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Html5Qrcode } from "html5-qrcode";
 import { ApiError, consultarFactura, type FacturaResult } from "@/lib/api";
 import { tc } from "@/lib/utils";
+
+// Detector de códigos nativo (Chrome/Android). En iOS Safari no existe y se usa jsQR.
+type BarcodeDetectorLike = { detect: (src: CanvasImageSource) => Promise<{ rawValue: string }[]> };
 
 const fmtMoney = (n: number) =>
   n.toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
@@ -40,7 +42,9 @@ export default function FacturaScanModal({
   onSaved: () => void;
 }) {
   const procesandoRef = useRef(false);
-  const html5Ref = useRef<Html5Qrcode | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const rafRef = useRef<number | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [buscando, setBuscando] = useState(false);
@@ -99,56 +103,108 @@ export default function FacturaScanModal({
     return () => { window.removeEventListener("keydown", onKey); if (timer) clearTimeout(timer); };
   }, [guardar]);
 
-  // Cámara en tiempo real: arranca cuando el modal de cámara está montado y visible.
+  // Cámara en tiempo real con getUserMedia nativo + jsQR (respaldo iOS Safari).
   useEffect(() => {
     if (!camOpen) return;
-    let inst: Html5Qrcode | null = null;
     setCamError(null);
-    (async () => {
-      try {
-        const { Html5Qrcode } = await import("html5-qrcode");
-        inst = new Html5Qrcode("factura-qr-reader", {
-          // El QR de la DIAN es muy denso: usa el detector nativo si existe.
-          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-          verbose: false,
-        });
-        html5Ref.current = inst;
-        const onDecode = (decoded: string) => {
-          const p = parseQR(decoded);
-          if (p) guardar(p.numFac, p.fecFac);
-        };
-        // Recuadro moderado y resolución media: en iPhone/Safari decodificar
-        // cada frame a full-res agota memoria y crashea WebKit ("page couldn't
-        // load"). Limitamos el área que jsQR procesa para mantenerlo liviano.
-        const config = {
-          fps: 10,
-          qrbox: (w: number, h: number) => {
-            const size = Math.min(Math.floor(Math.min(w, h) * 0.7), 320);
-            return { width: size, height: size };
-          },
-        };
-        try {
-          await inst.start(
-            { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
-            config,
-            onDecode,
-            () => { /* frames sin código */ }
-          );
-        } catch {
-          // Reintento sin restricción de resolución (algunos móviles la rechazan).
-          await inst.start({ facingMode: "environment" }, config, onDecode, () => {});
-        }
-      } catch {
-        setCamError(
-          "No se pudo abrir la cámara. Si abriste el enlace desde WhatsApp, ábrelo en Chrome o Safari y concede el permiso de cámara. También puedes usar la pistola o el modo manual."
-        );
-      }
-    })();
-    return () => {
-      const i = html5Ref.current;
-      html5Ref.current = null;
-      if (i) { i.stop().then(() => i?.clear()).catch(() => {}); }
+    let cancelled = false;
+
+    const stopAll = () => {
+      cancelled = true;
+      if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+      const s = streamRef.current;
+      streamRef.current = null;
+      if (s) s.getTracks().forEach((t) => t.stop());
+      if (videoRef.current) videoRef.current.srcObject = null;
     };
+
+    (async () => {
+      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+        setCamError("Este navegador no permite usar la cámara. Usa Chrome o Safari actualizados, o la pistola/manual.");
+        return;
+      }
+      if (!window.isSecureContext) {
+        setCamError("La cámara requiere conexión segura (HTTPS). Abre el sitio con https:// o usa la pistola/manual.");
+        return;
+      }
+      // getUserMedia se llama de inmediato (nativo) para conservar el gesto del usuario.
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        });
+      } catch {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        } catch (e2) {
+          const name = (e2 as DOMException)?.name;
+          setCamError(
+            name === "NotAllowedError"
+              ? "Permiso de cámara denegado. Actívalo en los ajustes del navegador (aA → Ajustes del sitio) y reintenta."
+              : name === "NotFoundError"
+              ? "No se encontró ninguna cámara en el dispositivo."
+              : name === "NotReadableError"
+              ? "La cámara está siendo usada por otra app. Ciérrala e inténtalo de nuevo."
+              : "No se pudo abrir la cámara. Usa la pistola o el modo manual."
+          );
+          return;
+        }
+      }
+      if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+      streamRef.current = stream;
+      const video = videoRef.current;
+      if (!video) { stopAll(); return; }
+      video.srcObject = stream;
+      video.setAttribute("playsinline", "true");
+      video.muted = true;
+      try { await video.play(); } catch { /* iOS puede requerir un toque extra */ }
+
+      const BD = (window as unknown as { BarcodeDetector?: new (o?: { formats?: string[] }) => BarcodeDetectorLike }).BarcodeDetector;
+      let detector: BarcodeDetectorLike | null = null;
+      try { if (BD) detector = new BD({ formats: ["qr_code"] }); } catch { detector = null; }
+      const jsQR = detector ? null : (await import("jsqr")).default;
+
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      let ultimoScan = 0;
+
+      const tick = async () => {
+        if (cancelled) return;
+        const now = Date.now();
+        if (video.readyState >= 2 && ctx && now - ultimoScan > 120) {
+          ultimoScan = now;
+          const vw = video.videoWidth, vh = video.videoHeight;
+          if (vw && vh) {
+            // Recorta el centro (donde está la guía) y lo escala a 512px: suficiente
+            // resolución para el QR denso de la DIAN sin sobrecargar el móvil.
+            const crop = Math.floor(Math.min(vw, vh) * 0.85);
+            const sx = Math.floor((vw - crop) / 2), sy = Math.floor((vh - crop) / 2);
+            const out = 512;
+            canvas.width = out; canvas.height = out;
+            ctx.drawImage(video, sx, sy, crop, crop, 0, 0, out, out);
+            try {
+              let texto: string | null = null;
+              if (detector) {
+                const codes = await detector.detect(canvas);
+                texto = codes[0]?.rawValue ?? null;
+              } else if (jsQR) {
+                const img = ctx.getImageData(0, 0, out, out);
+                texto = jsQR(img.data, out, out, { inversionAttempts: "dontInvert" })?.data ?? null;
+              }
+              if (texto) {
+                const p = parseQR(texto);
+                if (p) guardar(p.numFac, p.fecFac);
+              }
+            } catch { /* frame ilegible */ }
+          }
+        }
+        if (!cancelled) rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
+    })();
+
+    return () => { stopAll(); };
   }, [camOpen, guardar]);
 
   const etiqueta = origen === "INVERSIONES" ? "TAT Inversiones" : "TAT Agropecuaria";
@@ -271,7 +327,11 @@ export default function FacturaScanModal({
             </button>
           </div>
           <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-            <div id="factura-qr-reader" className="h-full w-full [&_video]:h-full [&_video]:w-full [&_video]:object-cover" />
+            <video ref={videoRef} className="h-full w-full object-cover" playsInline muted autoPlay />
+            {/* Guía de encuadre */}
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div className="h-[70vw] max-h-[320px] w-[70vw] max-w-[320px] rounded-2xl border-2 border-white/80 shadow-[0_0_0_100vmax_rgba(0,0,0,0.35)]" />
+            </div>
           </div>
           <div className="shrink-0 px-4 py-4 text-center text-white">
             {camError ? (
