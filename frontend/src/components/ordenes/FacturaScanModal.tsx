@@ -117,18 +117,19 @@ export default function FacturaScanModal({
           const p = parseQR(decoded);
           if (p) guardar(p.numFac, p.fecFac);
         };
-        // Recuadro grande (80% del lado menor) y alta resolución: el QR de la
-        // factura tiene muchos módulos y necesita nitidez para decodificarse.
+        // Recuadro moderado y resolución media: en iPhone/Safari decodificar
+        // cada frame a full-res agota memoria y crashea WebKit ("page couldn't
+        // load"). Limitamos el área que jsQR procesa para mantenerlo liviano.
         const config = {
-          fps: 15,
+          fps: 10,
           qrbox: (w: number, h: number) => {
-            const size = Math.floor(Math.min(w, h) * 0.8);
+            const size = Math.min(Math.floor(Math.min(w, h) * 0.7), 320);
             return { width: size, height: size };
           },
         };
         try {
           await inst.start(
-            { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+            { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
             config,
             onDecode,
             () => { /* frames sin código */ }
