@@ -8,6 +8,14 @@ import { tc } from "@/lib/utils";
 const fmtMoney = (n: number) =>
   n.toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
 
+// Detecta navegadores embebidos (WhatsApp, Instagram, Facebook, TikTok) donde
+// getUserMedia suele fallar o crashear ("This page couldn't load").
+function esNavegadorInApp(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /(FBAN|FBAV|Instagram|WhatsApp|Line|TikTok|MicroMessenger)/i.test(ua);
+}
+
 // Extrae NumFac y FecFac del contenido del QR de la factura electrónica (DIAN).
 function parseQR(texto: string): { numFac: string; fecFac: string } | null {
   const map = new Map<string, string>();
@@ -99,19 +107,40 @@ export default function FacturaScanModal({
     (async () => {
       try {
         const { Html5Qrcode } = await import("html5-qrcode");
-        inst = new Html5Qrcode("factura-qr-reader");
+        inst = new Html5Qrcode("factura-qr-reader", {
+          // El QR de la DIAN es muy denso: usa el detector nativo si existe.
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+          verbose: false,
+        });
         html5Ref.current = inst;
-        await inst.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 240, height: 240 } },
-          (decoded) => {
-            const p = parseQR(decoded);
-            if (p) guardar(p.numFac, p.fecFac);
+        const onDecode = (decoded: string) => {
+          const p = parseQR(decoded);
+          if (p) guardar(p.numFac, p.fecFac);
+        };
+        // Recuadro grande (80% del lado menor) y alta resolución: el QR de la
+        // factura tiene muchos módulos y necesita nitidez para decodificarse.
+        const config = {
+          fps: 15,
+          qrbox: (w: number, h: number) => {
+            const size = Math.floor(Math.min(w, h) * 0.8);
+            return { width: size, height: size };
           },
-          () => { /* frames sin código */ }
-        );
+        };
+        try {
+          await inst.start(
+            { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+            config,
+            onDecode,
+            () => { /* frames sin código */ }
+          );
+        } catch {
+          // Reintento sin restricción de resolución (algunos móviles la rechazan).
+          await inst.start({ facingMode: "environment" }, config, onDecode, () => {});
+        }
       } catch {
-        setCamError("No se pudo abrir la cámara. Revisa permisos o usa la pistola/manual.");
+        setCamError(
+          "No se pudo abrir la cámara. Si abriste el enlace desde WhatsApp, ábrelo en Chrome o Safari y concede el permiso de cámara. También puedes usar la pistola o el modo manual."
+        );
       }
     })();
     return () => {
@@ -163,7 +192,14 @@ export default function FacturaScanModal({
 
             {/* Cámara */}
             <button
-              onClick={() => setCamOpen(true)}
+              onClick={() => {
+                if (esNavegadorInApp()) {
+                  setError("Abriste el enlace dentro de WhatsApp. Toca el menú (•••) y elige \"Abrir en el navegador\" (Chrome o Safari) para usar la cámara.");
+                  return;
+                }
+                setError(null);
+                setCamOpen(true);
+              }}
               className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-[#dfe4e0] bg-white px-4 py-2.5 text-sm font-medium text-[#45505e] hover:bg-[#f4f6f3]"
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
