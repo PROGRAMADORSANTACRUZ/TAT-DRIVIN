@@ -227,6 +227,16 @@ function isoToDDMMYYYY(iso: string): string {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
 }
 
+// Normaliza la fecha de la factura a DD/MM/YYYY tolerando formatos con hora o ya
+// en DD/MM/YYYY. Si no viene o no se puede leer, usa el fecFac del QR (YYYY-MM-DD).
+function fechaFacturaADMY(raw: unknown, fallbackISO: string): string {
+  const s = String(raw ?? "").trim();
+  const iso = s.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return isoToDDMMYYYY(iso);
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
+  return isoToDDMMYYYY(fallbackISO);
+}
+
 function addDaysISO(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00`);
   d.setDate(d.getDate() + days);
@@ -1224,7 +1234,7 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
 
     // Una línea por producto de la factura.
     const lineas = filas.map((f) => ({
-      fecha: isoToDDMMYYYY(String(f.fecha_documento ?? "")),
+      fecha: fechaFacturaADMY(f.fecha_documento, fecFac),
       numeroOrden,
       cliente: String(f.razon_social_cliente ?? "").trim(),
       destino,
