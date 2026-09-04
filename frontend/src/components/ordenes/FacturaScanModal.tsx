@@ -51,7 +51,8 @@ export default function FacturaScanModal({
   const [buscando, setBuscando] = useState(false);
   const [resultados, setResultados] = useState<FacturaResult[]>([]);
   const [manualNum, setManualNum] = useState("");
-  const [manualFec, setManualFec] = useState(new Date().toISOString().slice(0, 10));
+  const [manualFecIni, setManualFecIni] = useState(new Date().toISOString().slice(0, 10));
+  const [manualFecFin, setManualFecFin] = useState(new Date().toISOString().slice(0, 10));
   const [camOpen, setCamOpen] = useState(false);
   const [camError, setCamError] = useState<string | null>(null);
   const [ultima, setUltima] = useState<string | null>(null);
@@ -64,15 +65,15 @@ export default function FacturaScanModal({
     flashTimer.current = setTimeout(() => setCamFlash(null), 2600);
   }, []);
 
-  // Guarda una factura (por NumFac/FecFac) y la agrega a la lista.
+  // Guarda una factura (por NumFac y fecha o rango de fechas) y la agrega a la lista.
   const guardar = useCallback(
-    async (numFac: string, fecFac: string) => {
+    async (numFac: string, fecFac: string, fecFin?: string) => {
       if (procesandoRef.current) return;
       procesandoRef.current = true;
       setBuscando(true);
       setError(null);
       try {
-        const r = await consultarFactura(origen, numFac, fecFac || new Date().toISOString().slice(0, 10));
+        const r = await consultarFactura(origen, numFac, fecFac || new Date().toISOString().slice(0, 10), fecFin);
         setResultados((prev) =>
           prev.some((x) => x.numeroOrden === r.numeroOrden) ? prev : [r, ...prev]
         );
@@ -280,23 +281,28 @@ export default function FacturaScanModal({
             {/* Manual */}
             <div className="mt-3 rounded-xl border border-[#e1e9dd] bg-white p-3">
               <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[#7a8794]">Manual</p>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <label className="block">
+                <span className="mb-1 block text-xs text-[#7a8794]">N.º factura (NumFac)</span>
+                <input value={manualNum} onChange={(e) => setManualNum(e.target.value)} placeholder="FEP62162" className="w-full rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm outline-none focus:border-[#2f8f4e]" />
+              </label>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
                 <label className="flex-1">
-                  <span className="mb-1 block text-xs text-[#7a8794]">N.º factura (NumFac)</span>
-                  <input value={manualNum} onChange={(e) => setManualNum(e.target.value)} placeholder="FEP62162" className="w-full rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm outline-none focus:border-[#2f8f4e]" />
+                  <span className="mb-1 block text-xs text-[#7a8794]">Desde</span>
+                  <input type="date" value={manualFecIni} onChange={(e) => setManualFecIni(e.target.value)} className="w-full rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm outline-none focus:border-[#2f8f4e]" />
                 </label>
-                <label className="sm:w-40">
-                  <span className="mb-1 block text-xs text-[#7a8794]">Fecha (FecFac)</span>
-                  <input type="date" value={manualFec} onChange={(e) => setManualFec(e.target.value)} className="w-full rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm outline-none focus:border-[#2f8f4e]" />
+                <label className="flex-1">
+                  <span className="mb-1 block text-xs text-[#7a8794]">Hasta</span>
+                  <input type="date" value={manualFecFin} onChange={(e) => setManualFecFin(e.target.value)} className="w-full rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm outline-none focus:border-[#2f8f4e]" />
                 </label>
                 <button
-                  onClick={() => manualNum.trim() && guardar(manualNum.trim(), manualFec)}
+                  onClick={() => manualNum.trim() && guardar(manualNum.trim(), manualFecIni, manualFecFin)}
                   disabled={buscando || !manualNum.trim()}
                   className="rounded-lg bg-[#2f8f4e] px-4 py-2 text-sm font-medium text-white hover:bg-[#277a42] disabled:opacity-50"
                 >
                   Buscar
                 </button>
               </div>
+              <p className="mt-1.5 text-[11px] text-[#7a8794]">Usa el rango para facturas de días anteriores. Por defecto busca solo hoy.</p>
             </div>
 
             {error && (

@@ -284,16 +284,17 @@ export interface FacturaResult {
   origen: string;
 }
 
-// Consulta una factura directo en Siesa (apiconsulta) por su NumFac/FecFac del QR
-// y la guarda (acumula) como orden TAT.
+// Consulta una factura directo en Siesa (apiconsulta) por su NumFac y una fecha o
+// rango de fechas (fecFac = inicio, fecFin = fin opcional) y la guarda como orden TAT.
 export function consultarFactura(
   origen: "AGROPECUARIA" | "INVERSIONES",
   numFac: string,
-  fecFac: string
+  fecFac: string,
+  fecFin?: string
 ): Promise<FacturaResult> {
   return request<FacturaResult>("/api/ordenes/factura", {
     method: "POST",
-    body: JSON.stringify({ origen, numFac, fecFac }),
+    body: JSON.stringify({ origen, numFac, fecFac, fecFin }),
   });
 }
 

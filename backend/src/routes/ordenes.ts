@@ -1162,7 +1162,7 @@ function limpiarProductoTat(tipo: string): string {
 }
 
 // POST /api/ordenes/factura  -> consulta UNA factura en apiconsulta (Siesa) y la
-// guarda (acumula). Reemplaza el sync masivo vía SIGCOM. body: { origen, numFac, fecFac }
+// guarda (acumula). Reemplaza el sync masivo vía SIGCOM. body: { origen, numFac, fecFac, fecFin? }
 router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res, next) => {
   try {
     const origen = String(req.body?.origen ?? "AGROPECUARIA").toUpperCase();
@@ -1173,6 +1173,13 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
     const fecFac = String(req.body?.fecFac ?? "").trim().slice(0, 10);
     if (!numFac) throw new HttpError(400, "Falta el número de factura (NumFac) del QR");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(fecFac)) throw new HttpError(400, "Fecha de factura (FecFac) inválida");
+    // Fin del rango (opcional, para búsqueda manual de facturas de días anteriores).
+    let fecFin = String(req.body?.fecFin ?? "").trim().slice(0, 10);
+    if (fecFin && !/^\d{4}-\d{2}-\d{2}$/.test(fecFin)) throw new HttpError(400, "Fecha fin inválida");
+    if (!fecFin) fecFin = fecFac;
+    // Si vienen invertidas, se ordenan para no romper la consulta.
+    const fechaInicio = fecFin < fecFac ? fecFin : fecFac;
+    const fechaFin = fecFin < fecFac ? fecFac : fecFin;
 
     const documento = numFacADocumento(numFac, origen);
     if (!documento) throw new HttpError(400, "No se pudo interpretar el número de factura");
@@ -1180,8 +1187,8 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
     const base = origen === "INVERSIONES" ? env.FACTURAS_INV_URL : env.FACTURAS_AGRO_URL;
     const params = new URLSearchParams({
       cia,
-      fecha_inicio: fecFac,
-      fecha_fin: fecFac,
+      fecha_inicio: fechaInicio,
+      fecha_fin: fechaFin,
       documento,
       ...(env.CLIENTES_TAT_TOKEN ? { token: env.CLIENTES_TAT_TOKEN } : {}),
     });
