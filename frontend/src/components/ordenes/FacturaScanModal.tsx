@@ -45,6 +45,7 @@ export default function FacturaScanModal({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [buscando, setBuscando] = useState(false);
@@ -54,6 +55,14 @@ export default function FacturaScanModal({
   const [camOpen, setCamOpen] = useState(false);
   const [camError, setCamError] = useState<string | null>(null);
   const [ultima, setUltima] = useState<string | null>(null);
+  // Aviso temporal (2.6s) que se muestra dentro de la vista de la cámara.
+  const [camFlash, setCamFlash] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const flash = useCallback((ok: boolean, msg: string) => {
+    setCamFlash({ ok, msg });
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setCamFlash(null), 2600);
+  }, []);
 
   // Guarda una factura (por NumFac/FecFac) y la agrega a la lista.
   const guardar = useCallback(
@@ -68,15 +77,18 @@ export default function FacturaScanModal({
           prev.some((x) => x.numeroOrden === r.numeroOrden) ? prev : [r, ...prev]
         );
         setUltima(r.numeroOrden);
+        flash(true, `Factura ${r.numeroOrden} encontrada ✓`);
         onSaved();
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : "No se pudo consultar la factura");
+        const msg = err instanceof ApiError ? err.message : "No se pudo consultar la factura";
+        setError(msg);
+        flash(false, msg);
       } finally {
         setBuscando(false);
         setTimeout(() => { procesandoRef.current = false; }, 1200);
       }
     },
-    [origen, onSaved]
+    [origen, onSaved, flash]
   );
 
   // Pistola QR (teclado-wedge): captura global, sin necesidad de hacer foco.
@@ -332,6 +344,21 @@ export default function FacturaScanModal({
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <div className="h-[70vw] max-h-[320px] w-[70vw] max-w-[320px] rounded-2xl border-2 border-white/80 shadow-[0_0_0_100vmax_rgba(0,0,0,0.35)]" />
             </div>
+            {/* Aviso temporal (encontrada / no encontrada) sobre la cámara */}
+            {camFlash && (
+              <div className="pointer-events-none absolute inset-x-0 top-4 flex justify-center px-4">
+                <div
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-lg ${
+                    camFlash.ok ? "bg-[#2f8f4e]" : "bg-[#b3261e]"
+                  }`}
+                >
+                  <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    {camFlash.ok ? <path d="M20 6 9 17l-5-5" /> : <><circle cx="12" cy="12" r="10" /><path d="M12 8v4m0 4h.01" /></>}
+                  </svg>
+                  <span>{camFlash.msg}</span>
+                </div>
+              </div>
+            )}
           </div>
           <div className="shrink-0 px-4 py-4 text-center text-white">
             {camError ? (
