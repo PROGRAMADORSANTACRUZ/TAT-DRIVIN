@@ -147,6 +147,9 @@ router.post("/sync", requireAuth, requirePermiso("/configuracion/clientes"), asy
 
     // Claves de clientes editados manualmente (se conservan tal cual).
     const editadoKeys = new Set<string>();
+    // Códigos (NIT/tercero, SIN sucursal) de clientes curados: nunca se re-importan
+    // desde la API aunque la sucursal no coincida (protege datos limpiados a mano).
+    const editadoCodigos = new Set<string>();
     // Claves de clientes eliminados (no deben reaparecer).
     const eliminadoKeys = new Set<string>();
     // Claves de los no editados vivos (para contar cuántos se actualizan).
@@ -167,6 +170,8 @@ router.post("/sync", requireAuth, requirePermiso("/configuracion/clientes"), asy
       if (e.editado) {
         preservados++;
         for (const k of keys) editadoKeys.add(k);
+        if (e.codigoTercero) editadoCodigos.add("c:" + e.codigoTercero);
+        if (e.nit) editadoCodigos.add("n:" + e.nit);
       } else {
         for (const k of keys) noEditadoKeys.add(k);
       }
@@ -174,6 +179,11 @@ router.post("/sync", requireAuth, requirePermiso("/configuracion/clientes"), asy
 
     const enSet = (row: (typeof data)[number], set: Set<string>) =>
       clavesDe(row.codigoTercero, row.nit, row.sucursal).some((k) => set.has(k));
+
+    // ¿La fila de la API corresponde a un cliente curado (por código, sin sucursal)?
+    const esCurado = (row: (typeof data)[number]) =>
+      (!!row.codigoTercero && editadoCodigos.has("c:" + row.codigoTercero)) ||
+      (!!row.nit && editadoCodigos.has("n:" + row.nit));
 
     const dirPreviaDe = (row: (typeof data)[number]) => {
       for (const k of clavesDe(row.codigoTercero, row.nit, row.sucursal)) {
@@ -183,10 +193,10 @@ router.post("/sync", requireAuth, requirePermiso("/configuracion/clientes"), asy
       return null;
     };
 
-    // Excluye los editados (se conservan) y los eliminados (no reaparecen).
+    // Excluye los editados (se conservan), los curados por código y los eliminados.
     // Si la API trae la dirección vacía y ya teníamos una buena, la conservamos.
     const filtrados = data
-      .filter((row) => !enSet(row, editadoKeys) && !enSet(row, eliminadoKeys))
+      .filter((row) => !enSet(row, editadoKeys) && !esCurado(row) && !enSet(row, eliminadoKeys))
       .map((row) => (row.direccion1 ? row : { ...row, direccion1: dirPreviaDe(row) }));
 
     // Verifica por NIT (clave natural NIT-sucursal / código-sucursal): un mismo
