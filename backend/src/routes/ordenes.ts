@@ -1355,7 +1355,8 @@ router.delete("/", requireAuth, async (req, res, next) => {
 });
 
 // POST /api/ordenes/sync-drivin-estado
-// Consulta Drivin por los escenarios del día y actualiza el estado de órdenes Enviadas
+// Consulta las pruebas de entrega (POD) de Drivin y refleja el estado de cada
+// orden (por número de factura) en el nivel de servicio.
 router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servicio"), async (_req, res, next) => {
   try {
     const DRIVIN_HEADERS = () => ({
@@ -1363,21 +1364,59 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
       "Content-Type": "application/json",
     });
 
-    const today = new Date().toISOString().slice(0, 10);
+    // Normaliza el código de orden/factura para comparar (Drivin a veces guarda
+    // espacios internos, p. ej. "FE -00023545").
+    const norm = (s: string | null | undefined) => String(s ?? "").replace(/\s+/g, "").toUpperCase();
 
-    // Obtener escenarios del día
-    const scenResp = await fetch(
-      `${env.DRIVIN_API_URL}/v2/scenarios?date=${today}`,
+    // Ventana de 2 días en zona horaria de Colombia (cubre el cambio de día UTC).
+    const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Bogota" });
+    const ayer = new Date(Date.now() - 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/Bogota" });
+
+    // Trae las pruebas de entrega del día: cada registro incluye el código de la
+    // orden (= número de factura) y su estado de entrega.
+    const podResp = await fetch(
+      `${env.DRIVIN_API_URL}/v3/pods?start_date=${ayer}&end_date=${hoy}`,
       { headers: DRIVIN_HEADERS() }
     );
-    if (!scenResp.ok) throw new HttpError(502, "No se pudo consultar Drivin");
+    if (!podResp.ok) throw new HttpError(502, `No se pudo consultar Drivin (${podResp.status})`);
 
-    const scenData = (await scenResp.json()) as {
-      response?: { token?: string; status?: string; description?: string }[];
+    const podData = (await podResp.json()) as {
+      data?: {
+        attributes?: {
+          code?: string;
+          status?: string;
+          reason?: string;
+          reason_code?: string;
+          scenario_token?: string;
+        };
+      }[];
     };
-    const escenarios = scenData.response ?? [];
+    const pods = podData.data ?? [];
 
-    // Mapa numeroOrden -> planilla activa (para poder crear novedades de nivel de servicio).
+    // Traduce el status de la POD de Drivin al estado de la orden y del nivel de
+    // servicio (novedad). approved = entregado OK; partial = entrega parcial;
+    // rejected = rechazo; pending / in-transit = aún en ruta.
+    function mapearEstado(status: string): { orden: string | null; nivel: string | null } {
+      switch (status.toLowerCase()) {
+        case "approved": return { orden: "Entregado", nivel: null };
+        case "partial": return { orden: "Entregado", nivel: "Parcial Con Novedad" };
+        case "rejected": return { orden: "Rechazado", nivel: "Rechazado" };
+        case "pending":
+        case "in-transit": return { orden: "Enviado", nivel: null };
+        default: return { orden: null, nivel: null };
+      }
+    }
+
+    // Mapa numeroOrden(normalizado) -> órdenes en BD (para actualizar por id).
+    const ordenesActivas = await prisma.orden.findMany({ select: { id: true, numeroOrden: true, estado: true } });
+    const ordenPorCode = new Map<string, { id: string; estado: string }[]>();
+    for (const o of ordenesActivas) {
+      const k = norm(o.numeroOrden);
+      const arr = ordenPorCode.get(k);
+      if (arr) arr.push(o); else ordenPorCode.set(k, [o]);
+    }
+
+    // Mapa numeroOrden(normalizado) -> planilla activa (para crear novedades).
     const planillasActivas = await prisma.planillaDespacho.findMany({
       where: { anulada: false },
     });
@@ -1386,16 +1425,8 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
       let items: { numeroOrden?: string; cliente?: string }[] = [];
       try { items = p.items ? JSON.parse(p.items) : []; } catch { items = []; }
       for (const it of items) {
-        if (it.numeroOrden) planillaPorOrden.set(it.numeroOrden, { ...p, itemCliente: it.cliente });
+        if (it.numeroOrden) planillaPorOrden.set(norm(it.numeroOrden), { ...p, itemCliente: it.cliente });
       }
-    }
-
-    // Traduce el status de Drivin al estado de nivel de servicio (novedad).
-    function nivelDesdeDrivin(status: string): string | null {
-      const s = status.toLowerCase();
-      if (s === "rejected") return "Rechazado";
-      if (s.includes("partial")) return "Parcial Con Novedad";
-      return null;
     }
 
     // Precarga novedades de las planillas activas (evita N+1 dentro del loop).
@@ -1405,7 +1436,7 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
       : [];
     const novedadPorClave = new Map<string, (typeof novedadesExistentes)[number]>();
     for (const n of novedadesExistentes) {
-      if (n.planillaId && n.numeroOrden) novedadPorClave.set(`${n.planillaId}||${n.numeroOrden}`, n);
+      if (n.planillaId && n.numeroOrden) novedadPorClave.set(`${n.planillaId}||${norm(n.numeroOrden)}`, n);
     }
     const nuevasNovedades: {
       consecutivo: number; fecha: string; estadoEntrega: string; novedad: string | null;
@@ -1414,91 +1445,77 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
     }[] = [];
 
     let actualizados = 0;
-    const detalle: { token: string; status: string; ordenes: number }[] = [];
+    const conteo = { approved: 0, partial: 0, rejected: 0, pending: 0, otros: 0 };
 
-    for (const esc of escenarios) {
-      if (!esc.token) continue;
+    for (const pod of pods) {
+      const a = pod.attributes;
+      if (!a?.code) continue;
+      const code = norm(a.code);
+      const status = (a.status ?? "").toLowerCase();
+      if (status in conteo) conteo[status as keyof typeof conteo]++; else conteo.otros++;
 
-      // Obtener órdenes del escenario en Drivin
-      const ordResp = await fetch(
-        `${env.DRIVIN_API_URL}/v2/orders?token=${esc.token}`,
-        { headers: DRIVIN_HEADERS() }
-      );
-      if (!ordResp.ok) continue;
+      const { orden: nuevoEstado, nivel: nivelEstado } = mapearEstado(status);
+      const motivo = a.reason || a.reason_code || null;
 
-      const ordData = (await ordResp.json()) as {
-        response?: { orders?: { code?: string; status?: string; reason_code?: string; reason_name?: string }[] }[];
-      };
-
-      const ordenesDrivin: Map<string, { status: string; reason_code?: string; reason_name?: string }> = new Map();
-      for (const addr of ordData.response ?? []) {
-        for (const o of addr.orders ?? []) {
-          if (o.code) ordenesDrivin.set(o.code, { status: o.status ?? "", reason_code: o.reason_code, reason_name: o.reason_name });
-        }
-      }
-
-      // Actualizar órdenes en nuestra BD
-      for (const [code, drivinOrden] of ordenesDrivin) {
-        const nuevoEstado =
-          drivinOrden.status === "delivered" ? "Entregado" :
-          drivinOrden.status === "rejected" ? "Rechazado" :
-          drivinOrden.status === "in_progress" ? "Enviado" : null;
-
-        if (nuevoEstado) {
+      // Actualiza el estado de la(s) orden(es) que coinciden por número de factura.
+      const ordenes = ordenPorCode.get(code);
+      if (nuevoEstado && ordenes?.length) {
+        const idsAActualizar = ordenes.filter((o) => o.estado !== nuevoEstado).map((o) => o.id);
+        if (idsAActualizar.length) {
           const { count } = await prisma.orden.updateMany({
-            where: { numeroOrden: code, estado: { in: ["Enviado", "Pendiente"] } },
+            where: { id: { in: idsAActualizar } },
             data: {
               estado: nuevoEstado,
-              ...(drivinOrden.reason_code ? { reasonCode: drivinOrden.reason_code } : {}),
-              ...(drivinOrden.reason_name ? { reasonName: drivinOrden.reason_name } : {}),
+              podCode: a.code ?? null,
+              ...(a.scenario_token ? { scenarioToken: a.scenario_token } : {}),
+              ...(a.reason_code ? { reasonCode: a.reason_code } : {}),
+              ...(motivo ? { reasonName: motivo } : {}),
             },
           });
           actualizados += count;
-        }
-
-        // Nivel de servicio: reflejar Rechazado / Parcial Con Novedad desde Drivin.
-        const nivelEstado = nivelDesdeDrivin(drivinOrden.status);
-        const planilla = planillaPorOrden.get(code);
-        if (nivelEstado && planilla) {
-          const existente = novedadPorClave.get(`${planilla.id}||${code}`);
-          if (existente) {
-            // No pisar un estado ya trabajado manualmente distinto de "Sin Novedad".
-            if (existente.estadoEntrega === "Sin Novedad" || existente.estadoEntrega === nivelEstado) {
-              await prisma.novedad.update({
-                where: { id: existente.id },
-                data: {
-                  estadoEntrega: nivelEstado,
-                  ...(drivinOrden.reason_name ? { novedad: drivinOrden.reason_name } : {}),
-                },
-              });
-            }
-          } else {
-            nuevasNovedades.push({
-              consecutivo: planilla.consecutivo,
-              fecha: planilla.fecha,
-              estadoEntrega: nivelEstado,
-              novedad: drivinOrden.reason_name ?? null,
-              planillaId: planilla.id,
-              placa: planilla.placa,
-              conductor: planilla.conductor,
-              auxiliarRuta: planilla.auxiliarRuta,
-              cliente: planilla.itemCliente ?? null,
-              numeroOrden: code,
-            });
-            // Evita duplicados si el mismo code aparece en varios escenarios.
-            novedadPorClave.set(`${planilla.id}||${code}`, { estadoEntrega: nivelEstado } as (typeof novedadesExistentes)[number]);
-          }
+          for (const o of ordenes) o.estado = nuevoEstado;
         }
       }
 
-      detalle.push({ token: esc.token, status: esc.status ?? "", ordenes: ordenesDrivin.size });
+      // Nivel de servicio: reflejar Rechazado / Parcial Con Novedad desde Drivin.
+      const planilla = planillaPorOrden.get(code);
+      if (nivelEstado && planilla) {
+        const existente = novedadPorClave.get(`${planilla.id}||${code}`);
+        if (existente) {
+          // No pisar un estado ya trabajado manualmente distinto de "Sin Novedad".
+          if (existente.estadoEntrega === "Sin Novedad" || existente.estadoEntrega === nivelEstado) {
+            await prisma.novedad.update({
+              where: { id: existente.id },
+              data: {
+                estadoEntrega: nivelEstado,
+                ...(motivo ? { novedad: motivo } : {}),
+              },
+            });
+          }
+        } else {
+          nuevasNovedades.push({
+            consecutivo: planilla.consecutivo,
+            fecha: planilla.fecha,
+            estadoEntrega: nivelEstado,
+            novedad: motivo,
+            planillaId: planilla.id,
+            placa: planilla.placa,
+            conductor: planilla.conductor,
+            auxiliarRuta: planilla.auxiliarRuta,
+            cliente: planilla.itemCliente ?? null,
+            numeroOrden: a.code,
+          });
+          // Evita duplicados si el mismo code llega repetido.
+          novedadPorClave.set(`${planilla.id}||${code}`, { estadoEntrega: nivelEstado } as (typeof novedadesExistentes)[number]);
+        }
+      }
     }
 
     if (nuevasNovedades.length) {
       await prisma.novedad.createMany({ data: nuevasNovedades });
     }
 
-    res.json({ actualizados, escenarios: detalle.length, detalle });
+    res.json({ actualizados, pods: pods.length, conteo });
   } catch (err) {
     next(err);
   }
