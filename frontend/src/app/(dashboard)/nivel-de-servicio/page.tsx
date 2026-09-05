@@ -132,8 +132,9 @@ export default function NivelServicioPage() {
       setDrafts((prev) => {
         const next = new Map(prev);
         for (const n of novs) {
-          if (!n.planillaId || !n.numeroOrden) continue;
-          const key = `${n.planillaId}|${n.numeroOrden}`;
+          if (!n.numeroOrden) continue;
+          // Orphan (sin DL) => clave "|numeroOrden"; con planilla => "planillaId|numeroOrden".
+          const key = n.planillaId ? `${n.planillaId}|${n.numeroOrden}` : `|${n.numeroOrden}`;
           if (!saving.has(key)) {
             next.set(key, {
               estadoEntrega: (n.estadoEntrega as NivelEstado) ?? "Sin Novedad",
@@ -163,7 +164,9 @@ export default function NivelServicioPage() {
   const novedadMap = useMemo(() => {
     const m = new Map<string, Novedad>();
     for (const n of novedades) {
-      if (n.planillaId && n.numeroOrden) m.set(`${n.planillaId}|${n.numeroOrden}`, n);
+      if (!n.numeroOrden) continue;
+      if (n.planillaId) m.set(`${n.planillaId}|${n.numeroOrden}`, n);
+      else m.set(`|${n.numeroOrden}`, n); // orphan sin DL
     }
     return m;
   }, [novedades]);
@@ -180,18 +183,54 @@ export default function NivelServicioPage() {
 
   // Expandir a filas por item, filtrar por tipo TAT/Distribución
   type ItemRow = { planillaId: string; planilla: Planilla; item: PlanillaItem };
+
+  // Info de la orden por remisión (para kg/destino/tipo de las filas sin DL).
+  const infoPorOrden = useMemo(() => {
+    const m = new Map<string, { kg: number; cliente: string; destino: string; distribucion: string }>();
+    for (const o of ordenes) {
+      const cur = m.get(o.numeroOrden);
+      if (cur) cur.kg += o.cantidadKg;
+      else m.set(o.numeroOrden, { kg: o.cantidadKg, cliente: o.cliente, destino: o.destino, distribucion: o.distribucion });
+    }
+    return m;
+  }, [ordenes]);
+
   const allRows = useMemo<ItemRow[]>(() => {
     const rows: ItemRow[] = [];
+    const numerosEnPlanillas = new Set<string>();
     for (const p of planillasFiltradas) {
       for (const item of (p.items ?? [])) {
+        numerosEnPlanillas.add(item.numeroOrden);
         const esTatItem = item.area === "TAT" || item.codigoArea?.startsWith("TAT") || false;
         if (esTAT && !esTatItem) continue;
         if (!esTAT && esTatItem) continue;
         rows.push({ planillaId: p.id, planilla: p, item });
       }
     }
+    // Filas "sin DL": remisiones enviadas manualmente al Nivel (novedad sin planilla).
+    for (const n of novedades) {
+      if (n.planillaId || !n.numeroOrden) continue;
+      if (numerosEnPlanillas.has(n.numeroOrden)) continue; // ya está en una planilla (con DL)
+      const f = n.fecha || new Date(n.createdAt).toISOString().slice(0, 10);
+      if ((desde && f < desde) || (hasta && f > hasta)) continue;
+      const info = infoPorOrden.get(n.numeroOrden);
+      const esTatItem = info?.distribucion === "TAT";
+      if (esTAT && !esTatItem) continue;
+      if (!esTAT && esTatItem) continue;
+      const planilla = {
+        id: "", consecutivo: 0, fecha: f, placa: n.placa ?? "", conductor: n.conductor ?? null,
+        origen: null, horaSalida: null, auxiliarRuta: n.auxiliarRuta ?? null, tipoDespacho: null, ruta: null,
+        docs: 0, kilos: 0, clientes: [], items: [], anulada: false, anuladaAt: null, impresa: false, impresaAt: null,
+        reemplazadaPorConsecutivo: null, reemplazaDeConsecutivo: null, createdAt: n.createdAt,
+      } as Planilla;
+      const item = {
+        numeroOrden: n.numeroOrden, cliente: n.cliente ?? info?.cliente ?? "",
+        destino: info?.destino ?? "", nombreDestino: info?.destino, kg: info?.kg ?? 0,
+      } as PlanillaItem;
+      rows.push({ planillaId: "", planilla, item });
+    }
     return rows;
-  }, [planillasFiltradas, esTAT]);
+  }, [planillasFiltradas, esTAT, novedades, infoPorOrden, desde, hasta]);
 
   const rowsFiltrados = useMemo(() => {
     const t = buscar.trim().toLowerCase();
@@ -240,7 +279,7 @@ export default function NivelServicioPage() {
         novedad: merged.novedad || null,
         responsabilidad: merged.responsabilidad || null,
         descripcion: merged.descripcion || "",
-        planillaId,
+        planillaId: planillaId || null,
         numeroOrden: item.numeroOrden,
         cliente: item.cliente,
         placa: planilla.placa,
@@ -315,7 +354,7 @@ export default function NivelServicioPage() {
       } else {
         await crearNovedad({
           tipo: "",
-          planillaId: reportando.planillaId,
+          planillaId: reportando.planillaId || null,
           numeroOrden: reportando.item.numeroOrden,
           cliente: reportando.item.cliente,
           placa: reportando.planilla.placa,
@@ -462,7 +501,7 @@ export default function NivelServicioPage() {
                           <div className="text-[10px] font-bold text-[#4a6fa5]">{rnLabel(novedadMap.get(key)!.consecutivo)}</div>
                         )}
                         <div className="font-mono text-xs font-semibold text-[#14352a]">{item.numeroOrden}</div>
-                        <div className="text-[10px] text-[#7a8794]">{dlLabel(planilla.consecutivo)}</div>
+                        <div className="text-[10px] text-[#7a8794]">{planilla.consecutivo ? dlLabel(planilla.consecutivo) : "Sin DL"}</div>
                       </td>
                       {/* Cliente / Destino */}
                       <td className="px-4 py-2.5">
@@ -745,7 +784,7 @@ function ResolucionModal({
         await editarNovedad(novedad.id, { resolucion: resolucion.trim() || null, estado });
       } else {
         await crearNovedad({
-          planillaId: data.planillaId,
+          planillaId: data.planillaId || null,
           numeroOrden: item.numeroOrden,
           cliente: item.cliente,
           placa: planilla.placa,

@@ -118,6 +118,25 @@ router.post("/", requireAuth, requirePermiso("/planificacion-dl"), async (req, r
         },
       });
     });
+
+    // Si alguna remisión de esta planilla ya se había enviado al Nivel de Servicio
+    // manualmente (sin DL), se le asigna ahora el DL de esta planilla (no duplica).
+    const numerosItems = (d.items ?? [])
+      .map((it) => it.numeroOrden)
+      .filter((n): n is string => Boolean(n));
+    if (numerosItems.length > 0) {
+      await prisma.novedad.updateMany({
+        where: { numeroOrden: { in: numerosItems }, planillaId: null },
+        data: {
+          planillaId: planilla.id,
+          placa: planilla.placa,
+          conductor: planilla.conductor,
+          auxiliarRuta: planilla.auxiliarRuta,
+          fecha: planilla.fecha,
+        },
+      });
+    }
+
     res.status(201).json({
       ...planilla,
       clientes: d.clientes ?? [],

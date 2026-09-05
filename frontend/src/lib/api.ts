@@ -834,6 +834,15 @@ export function eliminarNovedad(id: string): Promise<{ eliminado: boolean }> {
   });
 }
 
+// Envía remisiones (con vehículo asignado) al Nivel de Servicio sin generar DL.
+// No duplica: si ya está en el Nivel, se omite.
+export function enviarANivel(numerosOrden: string[]): Promise<{ creadas: number; omitidas: number }> {
+  return request<{ creadas: number; omitidas: number }>("/api/novedades/enviar-nivel", {
+    method: "POST",
+    body: JSON.stringify({ numerosOrden }),
+  });
+}
+
 // ── Configuración (auxiliares, rutas, nombres de planes, cambios) ───────────
 export interface Auxiliar {
   id: string;

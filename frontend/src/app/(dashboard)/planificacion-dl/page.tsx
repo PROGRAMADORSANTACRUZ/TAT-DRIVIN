@@ -17,6 +17,7 @@ import {
   getOrdenes,
   getPlanillas,
   getVehiculosExternos,
+  enviarANivel,
   limpiarCambiosHechos,
   marcarCambioHecho,
   marcarImpresa,
@@ -272,6 +273,72 @@ export default function PlanificacionDLPage() {
   }, []);
   useEffect(() => { refrescarCambios(); }, [refrescarCambios]);
   const cambiosPendientes = cambios.filter((c) => !c.hecho).length;
+
+  // ── Enviar remisiones asignadas al Nivel de Servicio (sin DL) ───────────────
+  const [enviarNivelOpen, setEnviarNivelOpen] = useState(false);
+  const [selNivel, setSelNivel] = useState<Set<string>>(new Set());
+  const [enviandoNivel, setEnviandoNivel] = useState(false);
+  const [buscarNivel, setBuscarNivel] = useState("");
+
+  // Remisiones (una por numeroOrden) con vehículo asignado y aún pendientes.
+  const remisionesAsignadas = useMemo(() => {
+    const m = new Map<string, { numeroOrden: string; cliente: string; destino: string; placa: string; kg: number; fecha: string }>();
+    for (const o of ordenes) {
+      if (!o.asignadoVehiculo) continue;
+      if (o.estado === "Entregado" || o.estado === "Rechazado") continue;
+      const cur = m.get(o.numeroOrden);
+      if (cur) { cur.kg += o.cantidadKg; }
+      else m.set(o.numeroOrden, {
+        numeroOrden: o.numeroOrden,
+        cliente: o.cliente,
+        destino: o.destino,
+        placa: o.asignadoVehiculo.toUpperCase(),
+        kg: o.cantidadKg,
+        fecha: o.fecha,
+      });
+    }
+    return [...m.values()].sort((a, b) => a.placa.localeCompare(b.placa) || a.numeroOrden.localeCompare(b.numeroOrden));
+  }, [ordenes]);
+
+  const remisionesNivelFiltradas = useMemo(() => {
+    const t = buscarNivel.trim().toLowerCase();
+    if (!t) return remisionesAsignadas;
+    return remisionesAsignadas.filter((r) =>
+      [r.numeroOrden, r.cliente, r.destino, r.placa].some((f) => f?.toLowerCase().includes(t))
+    );
+  }, [remisionesAsignadas, buscarNivel]);
+
+  function toggleNivel(numeroOrden: string) {
+    setSelNivel((prev) => {
+      const n = new Set(prev);
+      if (n.has(numeroOrden)) n.delete(numeroOrden); else n.add(numeroOrden);
+      return n;
+    });
+  }
+  function toggleTodasNivel() {
+    setSelNivel((prev) =>
+      prev.size === remisionesNivelFiltradas.length
+        ? new Set()
+        : new Set(remisionesNivelFiltradas.map((r) => r.numeroOrden))
+    );
+  }
+  async function handleEnviarNivel() {
+    if (selNivel.size === 0) return;
+    setEnviandoNivel(true);
+    try {
+      const { creadas, omitidas } = await enviarANivel([...selNivel]);
+      setEnviarNivelOpen(false);
+      setSelNivel(new Set());
+      setMessage(
+        `${creadas} remisión(es) enviada(s) al Nivel de Servicio` +
+        (omitidas > 0 ? ` · ${omitidas} ya estaban.` : ".")
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo enviar al Nivel de Servicio");
+    } finally {
+      setEnviandoNivel(false);
+    }
+  }
 
   const despachosFiltrados = useMemo(() => {
     const t = buscarDespacho.trim().toLowerCase();
@@ -560,6 +627,13 @@ export default function PlanificacionDLPage() {
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
             Ver históricos
           </Link>
+          <button
+            onClick={() => { setBuscarNivel(""); setSelNivel(new Set()); setEnviarNivelOpen(true); }}
+            className="inline-flex items-center gap-2 rounded-lg border border-[#cfe4d6] bg-[#eef7ea] px-4 py-2.5 text-sm font-medium text-[#2f8f4e] transition-colors hover:bg-[#e2f0dc]"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
+            Enviar a Nivel
+          </button>
           <button
             onClick={() => setMostrarCambios(true)}
             className="relative inline-flex items-center gap-2 rounded-lg border border-[#dfe4e0] bg-white px-4 py-2.5 text-sm font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3]"
@@ -907,6 +981,82 @@ export default function PlanificacionDLPage() {
 
       {/* Imprimir tras crear */}
       {creada && <ImprimirModal planilla={creada} onClose={() => setCreada(null)} onPrinted={() => load()} />}
+
+      {/* Modal: Enviar remisiones asignadas al Nivel de Servicio (sin DL) */}
+      {enviarNivelOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex shrink-0 items-center justify-between border-b border-[#eceef0] px-6 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-[#14352a]">Enviar a Nivel de Servicio</h3>
+                <p className="text-xs text-[#7a8794]">Remisiones con vehículo asignado. Se envían sin DL; al pasar por Planificación tomarán su código DL.</p>
+              </div>
+              <button onClick={() => setEnviarNivelOpen(false)} className="rounded-lg p-1.5 text-[#7a8794] hover:bg-[#f4f6f3]">
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 18 18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="shrink-0 border-b border-[#eceef0] px-6 py-3">
+              <SearchInput value={buscarNivel} onChange={setBuscarNivel} placeholder="Buscar remisión, cliente, placa…" className="max-w-md" />
+            </div>
+
+            <div className="nice-scroll min-h-0 flex-1 overflow-auto">
+              {remisionesNivelFiltradas.length === 0 ? (
+                <p className="p-8 text-center text-sm text-[#7a8794]">No hay remisiones con vehículo asignado.</p>
+              ) : (
+                <table className="w-full table-auto text-left text-sm">
+                  <thead className="sticky top-0 z-10 border-b border-[#eceef0] bg-[#f7faf5] text-xs uppercase tracking-wide text-[#7a8794]">
+                    <tr>
+                      <th className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={remisionesNivelFiltradas.length > 0 && selNivel.size === remisionesNivelFiltradas.length}
+                          onChange={toggleTodasNivel}
+                          className="h-4 w-4 accent-[#2f8f4e]"
+                        />
+                      </th>
+                      <th className="px-4 py-3 font-semibold">Remisión</th>
+                      <th className="px-4 py-3 font-semibold">Cliente</th>
+                      <th className="px-4 py-3 font-semibold">Placa</th>
+                      <th className="px-4 py-3 text-right font-semibold">Kg</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#f0f2ee]">
+                    {remisionesNivelFiltradas.map((r) => (
+                      <tr key={r.numeroOrden} className="cursor-pointer hover:bg-[#f9fbf7]" onClick={() => toggleNivel(r.numeroOrden)}>
+                        <td className="px-4 py-2.5">
+                          <input type="checkbox" checked={selNivel.has(r.numeroOrden)} onChange={() => toggleNivel(r.numeroOrden)} onClick={(e) => e.stopPropagation()} className="h-4 w-4 accent-[#2f8f4e]" />
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-xs font-semibold text-[#14352a]">{r.numeroOrden}</td>
+                        <td className="px-4 py-2.5 text-[#45505e]">{tc(r.cliente) || "—"}</td>
+                        <td className="px-4 py-2.5">
+                          <span className="rounded bg-yellow-300 px-1.5 py-0.5 text-xs font-bold tracking-wider text-[#14352a] ring-1 ring-yellow-400">{r.placa}</span>
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-[#14352a]">{r.kg.toLocaleString("es-CO", { maximumFractionDigits: 2 })}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="flex shrink-0 items-center justify-between border-t border-[#eceef0] px-6 py-4">
+              <span className="text-sm text-[#5f7a68]">{selNivel.size} seleccionada{selNivel.size !== 1 ? "s" : ""}</span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setEnviarNivelOpen(false)} className="rounded-lg border border-[#dfe4e0] px-4 py-2.5 text-sm font-medium text-[#45505e] hover:bg-[#f4f6f3]">Cancelar</button>
+                <button
+                  onClick={handleEnviarNivel}
+                  disabled={selNivel.size === 0 || enviandoNivel}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#2f8f4e] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#277a42] disabled:opacity-50"
+                >
+                  {enviandoNivel && <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.37 0 0 5.37 0 12h4Z"/></svg>}
+                  {enviandoNivel ? "Enviando…" : "Enviar a Nivel de Servicio"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Reporte de cambios */}
       {mostrarCambios && (
