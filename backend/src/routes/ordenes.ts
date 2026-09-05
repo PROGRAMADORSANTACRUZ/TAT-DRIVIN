@@ -1304,6 +1304,24 @@ router.post("/eliminar", requireAuth, requirePermiso("/ordenes"), async (req, re
   }
 });
 
+// POST /api/ordenes/asignar-ruta  -> asigna (o limpia con ruta vacía) la ruta/grupo a órdenes por ids
+router.post("/asignar-ruta", requireAuth, requirePermiso("/ordenes"), async (req, res, next) => {
+  try {
+    const ids: unknown = req.body?.ids;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new HttpError(400, "No se recibieron órdenes");
+    }
+    const ruta = String(req.body?.ruta ?? "").trim().slice(0, 60) || null;
+    const { count } = await prisma.orden.updateMany({
+      where: { id: { in: ids.map(String) } },
+      data: { ruta },
+    });
+    res.json({ actualizados: count, ruta });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /api/ordenes?tipo=B|P|I|AGRO|TAT  -> elimina según el filtro; sin tipo borra todo
 router.delete("/", requireAuth, async (req, res, next) => {
   try {

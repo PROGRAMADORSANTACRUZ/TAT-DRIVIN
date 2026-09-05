@@ -320,6 +320,17 @@ export function eliminarOrdenesPorIds(
   });
 }
 
+// Asigna (o limpia con ruta vacía) la ruta/grupo a un conjunto de órdenes por ids.
+export function asignarRutaOrdenes(
+  ids: string[],
+  ruta: string
+): Promise<{ actualizados: number; ruta: string | null }> {
+  return request<{ actualizados: number; ruta: string | null }>("/api/ordenes/asignar-ruta", {
+    method: "POST",
+    body: JSON.stringify({ ids, ruta }),
+  });
+}
+
 export function asignarOrdenes(
   ids: string[],
   placa: string | null

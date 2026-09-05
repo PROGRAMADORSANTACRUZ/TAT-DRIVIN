@@ -9,6 +9,7 @@ import {
   ApiError,
   asignarConsecutivo,
   asignarConsecutivoTat,
+  asignarRutaOrdenes,
   cruzarConsecutivosAuto,
   deleteOrdenes,
   eliminarOrdenesPorIds,
@@ -287,6 +288,11 @@ export default function OrdenesPage() {
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
   const [detalle, setDetalle] = useState<OrdenGrupo | null>(null);
+  // Selección de órdenes dentro del modal de categoría para asignarles una ruta.
+  const [selCarga, setSelCarga] = useState<Set<string>>(new Set());
+  const [rutaModalOpen, setRutaModalOpen] = useState(false);
+  const [rutaNombre, setRutaNombre] = useState("");
+  const [asignandoRuta, setAsignandoRuta] = useState(false);
   const [verif, setVerif] = useState<VerificacionClientes | null>(null);
   const [verifModalOpen, setVerifModalOpen] = useState(false);
   const [buscarVerif, setBuscarVerif] = useState("");
@@ -392,6 +398,9 @@ export default function OrdenesPage() {
   function closeCategory() {
     setActiveCategory(null);
     setEliminarModalOpen(false);
+    setSelCarga(new Set());
+    setRutaModalOpen(false);
+    setRutaNombre("");
   }
 
   // ── Datos derivados de la categoría activa ──────────────────────────────
@@ -421,6 +430,44 @@ export default function OrdenesPage() {
   });
 
   const pendientesGrupos = agrupar(filteredPendientes);
+
+  // Selección de órdenes (por clave de grupo) para asignar ruta en el modal de carga.
+  function toggleSelCarga(key: string) {
+    setSelCarga((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+  function toggleTodasCarga() {
+    setSelCarga((prev) =>
+      prev.size === pendientesGrupos.length
+        ? new Set()
+        : new Set(pendientesGrupos.map((g) => g.key))
+    );
+  }
+  async function handleAsignarRuta() {
+    const nombre = rutaNombre.trim();
+    if (!nombre || selCarga.size === 0) return;
+    const ids = pendientesGrupos
+      .filter((g) => selCarga.has(g.key))
+      .flatMap((g) => g.items.map((o) => o.id));
+    if (ids.length === 0) return;
+    setAsignandoRuta(true);
+    setError(null);
+    try {
+      await asignarRutaOrdenes(ids, nombre);
+      setRutaModalOpen(false);
+      setRutaNombre("");
+      setSelCarga(new Set());
+      setMessage(`${ids.length} orden(es) asignadas a la ruta "${nombre}".`);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo asignar la ruta");
+    } finally {
+      setAsignandoRuta(false);
+    }
+  }
 
   // Código del cliente relacionado (BD/Drivin) por consecutivo cliente||destino.
   const codigoPorClave = new Map<string, string>();
@@ -829,6 +876,16 @@ export default function OrdenesPage() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+                {selCarga.size > 0 && (
+                  <button
+                    onClick={() => { setRutaNombre(""); setRutaModalOpen(true); }}
+                    className={btn}
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>
+                    <span className="hidden sm:inline">Asignar a ruta ({selCarga.size})</span>
+                    <span className="sm:hidden">({selCarga.size})</span>
+                  </button>
+                )}
                 {activeCatOrdenes.length > 0 && (
                   <button
                     onClick={() => setEliminarModalOpen(true)}
@@ -946,6 +1003,9 @@ export default function OrdenesPage() {
                     <thead className="sticky top-0 z-10 border-b border-[#eceef0] bg-[#f7faf5] text-xs uppercase tracking-wide text-[#7a8794]">
                       {activeCat.isTat ? (
                         <tr>
+                          <th className="px-4 py-3">
+                            <input type="checkbox" className="h-4 w-4 cursor-pointer accent-[#2f8f4e]" checked={pendientesGrupos.length > 0 && selCarga.size === pendientesGrupos.length} onChange={toggleTodasCarga} />
+                          </th>
                           <th className="px-4 py-3 font-semibold">#</th>
                           <th className="px-4 py-3 font-semibold">Fecha</th>
                           <th className="px-4 py-3 font-semibold">No. Orden</th>
@@ -960,6 +1020,9 @@ export default function OrdenesPage() {
                         </tr>
                       ) : (
                         <tr>
+                          <th className="px-4 py-3">
+                            <input type="checkbox" className="h-4 w-4 cursor-pointer accent-[#2f8f4e]" checked={pendientesGrupos.length > 0 && selCarga.size === pendientesGrupos.length} onChange={toggleTodasCarga} />
+                          </th>
                           <th className="px-4 py-3 font-semibold">#</th>
                           <th className="px-4 py-3 font-semibold">Fecha</th>
                           <th className="px-4 py-3 font-semibold">No. Orden</th>
@@ -987,6 +1050,9 @@ export default function OrdenesPage() {
                           onClick={() => setDetalle(g)}
                           className="cursor-pointer hover:bg-[#f9fbf7]"
                         >
+                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                            <input type="checkbox" className="h-4 w-4 cursor-pointer accent-[#2f8f4e]" checked={selCarga.has(g.key)} onChange={() => toggleSelCarga(g.key)} />
+                          </td>
                           <td className="px-4 py-3 text-[#7a8794]">{i + 1}</td>
                           <td className="whitespace-nowrap px-4 py-3 text-[#45505e]">
                             {g.fecha || "—"}
@@ -1066,10 +1132,53 @@ export default function OrdenesPage() {
                 </div>
               )}
               {pendientesGrupos.length > 0 && (
-                <div className="flex shrink-0 items-center border-t border-[#eceef0] px-6 py-3 text-sm text-[#5f7a68]">
+                <div className="flex shrink-0 items-center justify-between border-t border-[#eceef0] px-6 py-3 text-sm text-[#5f7a68]">
                   <span>{pendientesGrupos.length} órdenes pendientes</span>
+                  {selCarga.size > 0 && (
+                    <span className="font-medium text-[#14352a]">{selCarga.size} seleccionada{selCarga.size !== 1 ? "s" : ""}</span>
+                  )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: nombre de la ruta para las órdenes seleccionadas */}
+      {rutaModalOpen && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="border-b border-[#eceef0] px-6 py-4">
+              <h3 className="text-lg font-semibold text-[#14352a]">Asignar a ruta</h3>
+              <p className="mt-1 text-sm text-[#5f7a68]">{selCarga.size} orden{selCarga.size !== 1 ? "es" : ""} seleccionada{selCarga.size !== 1 ? "s" : ""}.</p>
+            </div>
+            <div className="px-6 py-4">
+              <label className="mb-1 block text-xs font-medium text-[#7a8794]">Nombre de la ruta / plan</label>
+              <input
+                autoFocus
+                value={rutaNombre}
+                onChange={(e) => setRutaNombre(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleAsignarRuta(); }}
+                placeholder='Ej. "Ruta 1"'
+                className="w-full rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm outline-none focus:border-[#2f8f4e]"
+              />
+            </div>
+            <div className="flex justify-end gap-2 border-t border-[#eceef0] px-6 py-4">
+              <button
+                onClick={() => setRutaModalOpen(false)}
+                disabled={asignandoRuta}
+                className="rounded-lg border border-[#dfe4e0] px-4 py-2.5 text-sm font-medium text-[#45505e] transition-colors hover:bg-[#f4f6f3] disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleAsignarRuta}
+                disabled={asignandoRuta || !rutaNombre.trim()}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#2f8f4e] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#277a42] disabled:opacity-50"
+              >
+                {asignandoRuta && <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.37 0 0 5.37 0 12h4Z"/></svg>}
+                {asignandoRuta ? "Asignando…" : "Asignar ruta"}
+              </button>
             </div>
           </div>
         </div>

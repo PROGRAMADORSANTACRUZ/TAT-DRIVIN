@@ -708,7 +708,7 @@ export default function AsignacionVehiculosPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#f0f2ee]">
-                    {filtroDist === "TAT" ? (
+                    {gruposPorRuta.named.length > 0 ? (
                       <>
                         {gruposPorRuta.named.map(([nombre, grupos]) => {
                           const totalKg = grupos.reduce((s, g) => s + g.totalKg, 0);
