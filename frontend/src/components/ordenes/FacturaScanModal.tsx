@@ -46,6 +46,8 @@ export default function FacturaScanModal({
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ruta/grupo activo: se lee por ref para que la pistola/cámara siempre use el valor actual.
+  const rutaRef = useRef("");
 
   const [error, setError] = useState<string | null>(null);
   const [buscando, setBuscando] = useState(false);
@@ -56,6 +58,8 @@ export default function FacturaScanModal({
   const [camOpen, setCamOpen] = useState(false);
   const [camError, setCamError] = useState<string | null>(null);
   const [ultima, setUltima] = useState<string | null>(null);
+  // Ruta/grupo con el que se guardan las facturas escaneadas (ej. "Ruta 1").
+  const [ruta, setRuta] = useState("");
   // Aviso temporal (2.6s) que se muestra dentro de la vista de la cámara.
   const [camFlash, setCamFlash] = useState<{ ok: boolean; msg: string } | null>(null);
 
@@ -73,7 +77,7 @@ export default function FacturaScanModal({
       setBuscando(true);
       setError(null);
       try {
-        const r = await consultarFactura(origen, numFac, fecFac || new Date().toISOString().slice(0, 10), fecFin);
+        const r = await consultarFactura(origen, numFac, fecFac || new Date().toISOString().slice(0, 10), fecFin, rutaRef.current.trim() || undefined);
         setResultados((prev) =>
           prev.some((x) => x.numeroOrden === r.numeroOrden) ? prev : [r, ...prev]
         );
@@ -237,6 +241,27 @@ export default function FacturaScanModal({
           </div>
 
           <div className="nice-scroll min-h-0 flex-1 overflow-auto p-4">
+            {/* Ruta/grupo: se aplica a todas las facturas que se escaneen ahora */}
+            <div className="mb-3 rounded-xl border border-[#dfe4e0] bg-white p-3">
+              <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-[#7a8794]">Ruta / grupo (opcional)</label>
+              <div className="flex items-center gap-2">
+                <input
+                  value={ruta}
+                  onChange={(e) => { setRuta(e.target.value); rutaRef.current = e.target.value; }}
+                  placeholder='Ej. "Ruta 1"'
+                  className="w-full rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm outline-none focus:border-[#2f8f4e]"
+                />
+                {ruta.trim() && (
+                  <button onClick={() => { setRuta(""); rutaRef.current = ""; }} className="shrink-0 rounded-lg border border-[#dfe4e0] px-3 py-2 text-xs font-medium text-[#7a8794] hover:bg-[#f4f6f3]">Quitar</button>
+                )}
+              </div>
+              <p className="mt-1 text-[11px] text-[#7a8794]">
+                {ruta.trim()
+                  ? <>Las facturas que escanees se guardarán en <span className="font-semibold text-[#2f8f4e]">{ruta.trim()}</span>.</>
+                  : "Escribe un nombre para agrupar las próximas facturas como una ruta."}
+              </p>
+            </div>
+
             {/* Estado de la pistola: espera de lectura / consultando */}
             <div className="rounded-xl border border-[#2f8f4e]/30 bg-[#f7faf5] p-4 text-center">
               {buscando ? (
@@ -339,7 +364,10 @@ export default function FacturaScanModal({
       {camOpen && (
         <div className="fixed inset-0 z-[80] flex flex-col bg-black">
           <div className="flex shrink-0 items-center justify-between px-4 py-3 text-white">
-            <span className="text-sm font-semibold">Encuadra el QR de la factura</span>
+            <span className="text-sm font-semibold">
+              Encuadra el QR de la factura
+              {ruta.trim() && <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-xs font-medium">{ruta.trim()}</span>}
+            </span>
             <button onClick={() => setCamOpen(false)} aria-label="Cerrar cámara" className="rounded-lg p-1.5 hover:bg-white/10">
               <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 18 18 6M6 6l12 12" /></svg>
             </button>

@@ -1180,6 +1180,8 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
     // Si vienen invertidas, se ordenan para no romper la consulta.
     const fechaInicio = fecFin < fecFac ? fecFin : fecFac;
     const fechaFin = fecFin < fecFac ? fecFac : fecFin;
+    // Ruta/grupo opcional con el que se organiza la factura (ej. "Ruta 1").
+    const rutaBody = String(req.body?.ruta ?? "").trim().slice(0, 60) || null;
 
     const documento = numFacADocumento(numFac, origen);
     if (!documento) throw new HttpError(400, "No se pudo interpretar el número de factura");
@@ -1226,12 +1228,14 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
       : null;
     const dirMaestro = (clienteTat?.direccion1 ?? "").trim();
 
-    // Preserva el vehículo si esta factura ya estaba cargada.
+    // Preserva el vehículo y la ruta si esta factura ya estaba cargada.
     const previa = await prisma.orden.findFirst({
       where: { numeroOrden, distribucion: "TAT", tatOrigen: origen },
-      select: { asignadoVehiculo: true },
+      select: { asignadoVehiculo: true, ruta: true },
     });
     const vehiculo = previa?.asignadoVehiculo ?? null;
+    // Ruta enviada > ruta previa (no se pierde al re-escanear sin grupo).
+    const ruta = rutaBody ?? previa?.ruta ?? null;
 
     const codigo = nit ? claveNitSucursal(nit, filas[0].codigo_sucursal) : null;
     const dirInv = String(filas[0].direccion_sucursal ?? "").trim();
@@ -1256,6 +1260,7 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
       distribucion: "TAT",
       tatOrigen: origen,
       asignadoVehiculo: vehiculo,
+      ruta,
     }));
 
     // Reemplaza solo ESTA factura (idempotente al re-escanear), acumula el resto.
@@ -1275,6 +1280,7 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
       totalKg,
       totalValor,
       origen,
+      ruta,
     });
   } catch (err) {
     next(err);

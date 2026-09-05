@@ -107,6 +107,9 @@ model Orden {
   // Placa del vehículo al que se asignó la orden.
   asignadoVehiculo String?
 
+  // Ruta/grupo con el que se cargó la factura TAT (ej. "Ruta 1"). Null si no aplica.
+  ruta String?
+
   createdAt DateTime @default(now())
 
   @@index([numeroOrden])
@@ -114,6 +117,7 @@ model Orden {
   @@index([asignadoVehiculo])
   @@index([estado])
   @@index([fecha])
+  @@index([ruta])
 }
 
 // Cliente/dirección importado desde el maestro de direcciones.

@@ -230,6 +230,7 @@ export interface Orden {
   reenviado: boolean;
   reenviadoAt: string | null;
   asignadoVehiculo: string | null;
+  ruta: string | null;
   cargado: boolean;
   cargadoAt: string | null;
   createdAt: string;
@@ -282,19 +283,22 @@ export interface FacturaResult {
   totalKg: number;
   totalValor: number;
   origen: string;
+  ruta?: string | null;
 }
 
 // Consulta una factura directo en Siesa (apiconsulta) por su NumFac y una fecha o
 // rango de fechas (fecFac = inicio, fecFin = fin opcional) y la guarda como orden TAT.
+// ruta = grupo/ruta opcional (ej. "Ruta 1") para organizar en asignación.
 export function consultarFactura(
   origen: "AGROPECUARIA" | "INVERSIONES",
   numFac: string,
   fecFac: string,
-  fecFin?: string
+  fecFin?: string,
+  ruta?: string
 ): Promise<FacturaResult> {
   return request<FacturaResult>("/api/ordenes/factura", {
     method: "POST",
-    body: JSON.stringify({ origen, numFac, fecFac, fecFin }),
+    body: JSON.stringify({ origen, numFac, fecFac, fecFin, ruta }),
   });
 }
 

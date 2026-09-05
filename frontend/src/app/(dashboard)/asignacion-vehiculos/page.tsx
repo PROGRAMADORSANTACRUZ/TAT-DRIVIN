@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, Fragment } from "react";
 import { tc, btn } from "@/lib/utils";
 import {
   ApiError,
@@ -53,6 +53,7 @@ type OrdenGrupo = {
   totalValor: number;
   productos: string[];
   direccion: string | null;
+  ruta: string | null;
 };
 
 function agrupar(ordenes: Orden[]): OrdenGrupo[] {
@@ -80,6 +81,7 @@ function agrupar(ordenes: Orden[]): OrdenGrupo[] {
         totalValor: 0,
         productos: [],
         direccion: o.direccion ?? null,
+        ruta: o.ruta ?? null,
       };
       map.set(key, g);
     }
@@ -89,6 +91,7 @@ function agrupar(ordenes: Orden[]): OrdenGrupo[] {
     g.items += 1;
     if (o.producto) g.productos.push(o.producto);
     if (!g.direccion && o.direccion) g.direccion = o.direccion;
+    if (!g.ruta && o.ruta) g.ruta = o.ruta;
     if (!g.clienteAsignado && o.clienteAsignado) g.clienteAsignado = o.clienteAsignado;
     if (o.asignadoVehiculo) g.asignado = o.asignadoVehiculo;
     if (o.estado === "Enviado") g.enviado = true;
@@ -254,6 +257,21 @@ export default function AsignacionVehiculosPage() {
         : true
     );
 
+  // Para TAT: agrupa los pendientes por ruta (grupo) para mostrarlos anidados.
+  const gruposPorRuta = (() => {
+    const named = new Map<string, OrdenGrupo[]>();
+    const sinRuta: OrdenGrupo[] = [];
+    for (const g of pendientesFiltrados) {
+      const r = (g.ruta ?? "").trim();
+      if (r) { const a = named.get(r) ?? []; a.push(g); named.set(r, a); }
+      else sinRuta.push(g);
+    }
+    return {
+      named: [...named.entries()].sort((a, b) => a[0].localeCompare(b[0])),
+      sinRuta,
+    };
+  })();
+
   const ta = buscarAsig.trim().toLowerCase();
   const asignadasFiltradas = ta
     ? conAsignacionGrupos.filter((g) =>
@@ -272,6 +290,45 @@ export default function AsignacionVehiculosPage() {
       else next.add(key);
       return next;
     });
+  }
+
+  // Selecciona/deselecciona todas las facturas de una ruta.
+  function toggleRuta(grupos: OrdenGrupo[]) {
+    setSeleccion((prev) => {
+      const next = new Set(prev);
+      const todas = grupos.length > 0 && grupos.every((g) => next.has(g.key));
+      for (const g of grupos) {
+        if (todas) next.delete(g.key);
+        else next.add(g.key);
+      }
+      return next;
+    });
+  }
+
+  // Fila de una orden/factura en la tabla de pendientes (indent = anidada bajo ruta).
+  function filaOrden(g: OrdenGrupo, indent = false) {
+    const esTat = g.distribucion === "TAT";
+    const dir = dirLimpia(g.direccion);
+    return (
+      <tr key={g.key} className="hover:bg-[#f9fbf7]">
+        <td className={`px-4 py-2 ${indent ? "pl-8" : ""}`}>
+          <input type="checkbox" className="h-4 w-4 cursor-pointer accent-[#2f8f4e]" checked={seleccion.has(g.key)} onChange={() => toggle(g.key)} />
+        </td>
+        <td className="px-4 py-2 font-medium text-[#14352a]">{g.numeroOrden || " "}</td>
+        <td className="px-4 py-2">
+          {esTat ? (
+            <span className="inline-flex rounded-full bg-[#fef3e6] px-2.5 py-0.5 text-xs font-medium text-[#b5731e]">TAT</span>
+          ) : (
+            <span className="inline-flex rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">Distribución</span>
+          )}
+        </td>
+        <td className="px-4 py-2 text-[#45505e]">{tc(g.clienteAsignado ?? g.cliente) || "—"}</td>
+        <td className="whitespace-nowrap px-4 py-2 text-[#45505e]">{esTat ? (g.nit || "—") : "—"}</td>
+        <td className="px-4 py-2 text-[#45505e]">{dir ? tc(dir) : (esTat ? "—" : tc(g.destino))}</td>
+        <td className="px-4 py-2 text-right tabular-nums text-[#14352a]">{g.totalKg.toFixed(2)}</td>
+        <td className="px-4 py-2 text-right tabular-nums text-[#14352a]">{g.totalValor > 0 ? fmtMoney(g.totalValor) : "—"}</td>
+      </tr>
+    );
   }
 
   async function asignar(vehiculo: VehiculoExterno) {
@@ -651,30 +708,40 @@ export default function AsignacionVehiculosPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#f0f2ee]">
-                    {pendientesFiltrados.map((g) => {
-                      const esTat = g.distribucion === "TAT";
-                      const dir = dirLimpia(g.direccion);
-                      return (
-                      <tr key={g.key} className="hover:bg-[#f9fbf7]">
-                        <td className="px-4 py-2">
-                          <input type="checkbox" className="h-4 w-4 cursor-pointer accent-[#2f8f4e]" checked={seleccion.has(g.key)} onChange={() => toggle(g.key)} />
-                        </td>
-                        <td className="px-4 py-2 font-medium text-[#14352a]">{g.numeroOrden || " "}</td>
-                        <td className="px-4 py-2">
-                          {esTat ? (
-                            <span className="inline-flex rounded-full bg-[#fef3e6] px-2.5 py-0.5 text-xs font-medium text-[#b5731e]">TAT</span>
-                          ) : (
-                            <span className="inline-flex rounded-full bg-[#e8f3e2] px-2.5 py-0.5 text-xs font-medium text-[#2f8f4e]">Distribución</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2 text-[#45505e]">{tc(g.clienteAsignado ?? g.cliente) || "—"}</td>
-                        <td className="whitespace-nowrap px-4 py-2 text-[#45505e]">{esTat ? (g.nit || "—") : "—"}</td>
-                        <td className="px-4 py-2 text-[#45505e]">{dir ? tc(dir) : (esTat ? "—" : tc(g.destino))}</td>
-                        <td className="px-4 py-2 text-right tabular-nums text-[#14352a]">{g.totalKg.toFixed(2)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums text-[#14352a]">{g.totalValor > 0 ? fmtMoney(g.totalValor) : "—"}</td>
-                      </tr>
-                      );
-                    })}
+                    {filtroDist === "TAT" ? (
+                      <>
+                        {gruposPorRuta.named.map(([nombre, grupos]) => {
+                          const totalKg = grupos.reduce((s, g) => s + g.totalKg, 0);
+                          const allSel = grupos.every((g) => seleccion.has(g.key));
+                          return (
+                            <Fragment key={`ruta-${nombre}`}>
+                              <tr className="bg-[#eef2f8]">
+                                <td className="px-4 py-2">
+                                  <input type="checkbox" className="h-4 w-4 cursor-pointer accent-[#2f8f4e]" checked={allSel} onChange={() => toggleRuta(grupos)} />
+                                </td>
+                                <td colSpan={7} className="px-4 py-2">
+                                  <span className="inline-flex items-center gap-2 font-semibold text-[#14352a]">
+                                    <svg className="h-4 w-4 text-[#4a6fa5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>
+                                    {nombre}
+                                    <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-[#45505e] ring-1 ring-[#dfe4e0]">{grupos.length} factura{grupos.length !== 1 ? "s" : ""} · {totalKg.toFixed(0)} kg</span>
+                                  </span>
+                                </td>
+                              </tr>
+                              {grupos.map((g) => filaOrden(g, true))}
+                            </Fragment>
+                          );
+                        })}
+                        {gruposPorRuta.sinRuta.length > 0 && gruposPorRuta.named.length > 0 && (
+                          <tr className="bg-[#f7faf5]">
+                            <td className="px-4 py-1.5"></td>
+                            <td colSpan={7} className="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#7a8794]">Sin ruta</td>
+                          </tr>
+                        )}
+                        {gruposPorRuta.sinRuta.map((g) => filaOrden(g))}
+                      </>
+                    ) : (
+                      pendientesFiltrados.map((g) => filaOrden(g))
+                    )}
                   </tbody>
                 </table>
               </div>
