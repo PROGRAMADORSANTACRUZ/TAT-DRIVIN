@@ -1422,6 +1422,7 @@ export default function OrdenesPage() {
           nombreInicial={crearTarget.cliente}
           direccionInicial={direccionAuto}
           codigoInicial={codigoAuto}
+          tipoInicial={crearTarget.distribucion === "TAT" ? "TAT" : "Distribución"}
           consecutivoInicial={`${crearTarget.cliente} - ${crearTarget.destino}`}
           onClose={() => setCrearTarget(null)}
           onSaved={(saved) => {

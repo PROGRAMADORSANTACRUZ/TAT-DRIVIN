@@ -366,6 +366,7 @@ export interface Cliente {
   correo: string | null;
   puntoVenta: string | null;
   tipo: string | null;
+  vendedor: string | null;
   activo: boolean;
   consecutivos: string[];
   createdAt: string;

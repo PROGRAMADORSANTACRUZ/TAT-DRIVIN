@@ -35,6 +35,7 @@ interface Form {
   correo: string;
   puntoVenta: string;
   tipo: "TAT" | "Distribución";
+  vendedor: string;
   activo: boolean;
   lat: number | null;
   lng: number | null;
@@ -44,6 +45,7 @@ const VACIO: Form = {
   codigo: "", nombre: "", direccion: "", referencia: "", barrio: "", manzana: "",
   lote: "", tipoVia: "", ciudad: "",
   departamento: "", telefono: "", correo: "", puntoVenta: "", tipo: "Distribución",
+  vendedor: "",
   activo: true, lat: null, lng: null,
 };
 
@@ -69,6 +71,7 @@ function fromGS(c: Cliente): Form {
     correo: c.correo ?? "",
     puntoVenta: c.puntoVenta ?? "",
     tipo: (c.tipo as Form["tipo"]) || "Distribución",
+    vendedor: c.vendedor ?? "",
     activo: c.activo ?? true,
     lat: numOrNull(c.lat),
     lng: numOrNull(c.lon),
@@ -91,6 +94,7 @@ function fromTat(c: ClienteTat): Form {
     correo: c.correo ?? "",
     puntoVenta: c.puntoVenta ?? "",
     tipo: (c.tipo as Form["tipo"]) || "TAT",
+    vendedor: c.vendedor ?? "",
     activo: true,
     lat: numOrNull(c.lat),
     lng: numOrNull(c.lon),
@@ -105,6 +109,8 @@ export default function ClienteFormModal({
   consecutivoInicial,
   direccionInicial = "",
   codigoInicial = "",
+  tipoInicial,
+  vendedorInicial = "",
   onClose,
   onSaved,
   onDeleted,
@@ -116,6 +122,8 @@ export default function ClienteFormModal({
   consecutivoInicial?: string;
   direccionInicial?: string;
   codigoInicial?: string;
+  tipoInicial?: "TAT" | "Distribución";
+  vendedorInicial?: string;
   onClose: () => void;
   onSaved: (cliente: Cliente | ClienteTat) => void;
   onDeleted?: () => void;
@@ -128,6 +136,8 @@ export default function ClienteFormModal({
       nombre: nombreInicial ? tc(nombreInicial) : "",
       direccion: direccionInicial ? tc(direccionInicial) : "",
       codigo: codigoInicial ?? "",
+      tipo: tipoInicial ?? VACIO.tipo,
+      vendedor: vendedorInicial ?? "",
     };
   });
   const [saving, setSaving] = useState(false);
@@ -182,7 +192,7 @@ export default function ClienteFormModal({
           celular: tat.celular,
           correo: form.correo.trim() || null,
           idVendedor: tat.idVendedor,
-          vendedor: tat.vendedor,
+          vendedor: form.vendedor.trim() || null,
           idCriterio: tat.idCriterio,
           criterio: tat.criterio,
           referencia: form.referencia.trim() || null,
@@ -209,6 +219,7 @@ export default function ClienteFormModal({
           correo: form.correo.trim() || null,
           puntoVenta: form.puntoVenta.trim() || null,
           tipo: form.tipo,
+          vendedor: form.vendedor.trim() || null,
           activo: form.activo,
           pais: "Colombia",
           lat: latStr,
@@ -249,7 +260,7 @@ export default function ClienteFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-3">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-3">
       <div
         className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -321,6 +332,15 @@ export default function ClienteFormModal({
                       onChange={(e) => set("correo", e.target.value)}
                       type="email"
                       placeholder="correo@ejemplo.com"
+                      className={`${INPUT_CLS} min-w-[14rem]`}
+                    />
+                  </Campo>
+                  <Campo label="Vendedor">
+                    <input
+                      value={form.vendedor}
+                      onChange={(e) => set("vendedor", e.target.value)}
+                      onBlur={(e) => set("vendedor", tc(e.target.value))}
+                      placeholder="Nombre del vendedor"
                       className={`${INPUT_CLS} min-w-[14rem]`}
                     />
                   </Campo>

@@ -141,6 +141,7 @@ model Cliente {
   correo          String?
   puntoVenta      String?
   tipo            String?  // "TAT" | "Distribución"
+  vendedor        String?  // Vendedor configurado para este cliente (fallback a Drivin)
   activo          Boolean  @default(true)
   consecutivos    String?  // JSON: lista de consecutivos/concatenados que mapean a este cliente
   createdAt       DateTime @default(now())

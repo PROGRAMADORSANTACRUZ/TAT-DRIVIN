@@ -90,14 +90,14 @@ export async function buildScenarioPayload(opts: {
       codigoTercero: true, nit: true, sucursal: true, razonSocial: true,
       direccion1: true, ciudad: true, departamento: true, pais: true,
       lat: true, lon: true, consecutivos: true,
-      referencia: true, telefono: true, celular: true, correo: true,
+      referencia: true, telefono: true, celular: true, correo: true, vendedor: true,
     },
   });
 
   // Índice de contacto TAT por código (NIT-sucursal): referencia y contacto.
   const tatInfoPorCodigo = new Map<
     string,
-    { referencia: string | null; telefono: string | null; correo: string | null; departamento: string | null }
+    { referencia: string | null; telefono: string | null; correo: string | null; departamento: string | null; vendedor: string | null }
   >();
   for (const c of clientesTat) {
     if (!c.nit) continue;
@@ -108,6 +108,7 @@ export async function buildScenarioPayload(opts: {
       telefono: c.telefono ?? c.celular ?? null,
       correo: c.correo ?? null,
       departamento: c.departamento ?? null,
+      vendedor: c.vendedor ?? null,
     });
   }
 
@@ -137,6 +138,7 @@ export async function buildScenarioPayload(opts: {
     telefono: string | null;
     correo: string | null;
     departamento: string | null;
+    vendedor: string | null;
   };
   const geoMap = new Map<string, GeoEntry>();
   const geoByDest = new Map<string, GeoEntry>();
@@ -153,6 +155,7 @@ export async function buildScenarioPayload(opts: {
       telefono: c.telefono ?? null,
       correo: c.correo ?? null,
       departamento: c.region ?? c.provincia ?? null,
+      vendedor: c.vendedor ?? null,
     };
     if (c.cliente && c.nombreDireccion)
       geoMap.set(`${normKey(c.cliente)}||${normKey(c.nombreDireccion)}`, entry);
@@ -169,6 +172,7 @@ export async function buildScenarioPayload(opts: {
     nombre?: string; direccion?: string; codigo?: string;
     ciudad?: string | null; pais?: string | null; lat?: string | null; lng?: string | null;
     referencia?: string | null; telefono?: string | null; correo?: string | null; departamento?: string | null;
+    vendedor?: string | null;
   };
   const porNitConcat = new Map<string, ClienteInfo>();
   const porConsecutivo = new Map<string, ClienteInfo>();
@@ -196,6 +200,7 @@ export async function buildScenarioPayload(opts: {
       telefono: c.telefono ?? null,
       correo: c.correo ?? null,
       departamento: c.region ?? c.provincia ?? null,
+      vendedor: c.vendedor ?? null,
     });
   }
   for (const c of clientesTat) {
@@ -211,6 +216,7 @@ export async function buildScenarioPayload(opts: {
       telefono: c.telefono ?? c.celular ?? null,
       correo: c.correo ?? null,
       departamento: c.departamento ?? null,
+      vendedor: c.vendedor ?? null,
     });
   }
 
@@ -266,6 +272,13 @@ export async function buildScenarioPayload(opts: {
       geoByCliente.get(normKey(cliente)) ??
       null;
     const city = asignado?.ciudad || geo?.ciudad || clienteGS || destino;
+    // Vendedor por defecto del cliente (si la remisión no trae vendedor propio):
+    // primero el del concatenado, luego GS, luego el maestro TAT por código.
+    const vendedorCliente =
+      asignado?.vendedor ??
+      geo?.vendedor ??
+      (codigoTat ? tatInfoPorCodigo.get(codigoTat)?.vendedor : null) ??
+      null;
     const orders = [];
     for (const [numeroOrden, lineas] of pedidos) {
       // Agrupa por producto: suma kg y valor (para el recaudo por ítem).
@@ -294,7 +307,7 @@ export async function buildScenarioPayload(opts: {
       // Fecha de venta (DD/MM/YYYY -> YYYY-MM-DD) para billing_date.
       const fm = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(lineas[0].fecha ?? "");
       const ventaISO = fm ? `${fm[3]}-${fm[2]}-${fm[1]}` : undefined;
-      const vendedor = lineas[0].vendedor?.trim() || undefined;
+      const vendedor = lineas[0].vendedor?.trim() || vendedorCliente || undefined;
       const distribLabel = lineas[0].distribucion === "TAT"
         ? `TAT ${lineas[0].tatOrigen ?? ""}`.trim()
         : "AGROPECUARIA";
