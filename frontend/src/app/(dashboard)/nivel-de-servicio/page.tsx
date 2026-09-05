@@ -108,16 +108,10 @@ export default function NivelServicioPage() {
   const [resolviendo, setResolviendo] = useState<{ key: string; planillaId: string; item: PlanillaItem; planilla: Planilla; novedad: Novedad | null } | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const drivinRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [syncing, setSyncing] = useState(false);
-
-  async function handleSyncDrivin() {
-    setSyncing(true);
-    try {
-      const { actualizados } = await syncEstadoDrivin();
-      if (actualizados > 0) await load(false);
-    } catch { /* silencioso */ }
-    finally { setSyncing(false); }
-  }
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [ultimaSync, setUltimaSync] = useState<Date | null>(null);
 
   const load = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true);
@@ -154,11 +148,34 @@ export default function NivelServicioPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Consulta a Drivin el estado de las órdenes enviadas (match por numeroOrden/factura)
+  // y refresca el nivel. `manual` solo controla el spinner del botón.
+  const sincronizarDrivin = useCallback(async (manual = false) => {
+    if (manual) setSyncing(true);
+    try {
+      const { actualizados } = await syncEstadoDrivin();
+      setUltimaSync(new Date());
+      setSyncMsg(null);
+      if (actualizados > 0) await load(false);
+    } catch (err) {
+      setSyncMsg(err instanceof ApiError ? err.message : "No se pudo consultar Drivin");
+    } finally {
+      if (manual) setSyncing(false);
+    }
+  }, [load]);
+
   useEffect(() => {
     load(true);
     pollRef.current = setInterval(() => load(false), 30_000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [load]);
+
+  // Sincroniza el estado desde Drivin al entrar y cada 3 minutos automáticamente.
+  useEffect(() => {
+    sincronizarDrivin();
+    drivinRef.current = setInterval(() => sincronizarDrivin(), 180_000);
+    return () => { if (drivinRef.current) clearInterval(drivinRef.current); };
+  }, [sincronizarDrivin]);
 
   // Map novedades por planillaId|numeroOrden para lookup O(1)
   const novedadMap = useMemo(() => {
@@ -388,12 +405,12 @@ export default function NivelServicioPage() {
               <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>
             </svg>
           </button>
-          <button onClick={handleSyncDrivin} disabled={syncing} title="Sincronizar estados desde Drivin" className="inline-flex items-center gap-1.5 rounded-lg border border-[#dfe4e0] bg-white px-3 py-2 text-xs font-medium text-[#45505e] hover:bg-[#f4f6f3] disabled:opacity-50">
+          <button onClick={() => sincronizarDrivin(true)} disabled={syncing} title={syncMsg ? `Última sincronización falló: ${syncMsg}` : ultimaSync ? `Última: ${ultimaSync.toLocaleTimeString("es-CO")}` : "Sincronizar estados desde Drivin (automático cada 3 min)"} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium hover:bg-[#f4f6f3] disabled:opacity-50 ${syncMsg ? "border-[#f0c4c1] bg-[#fbeceb] text-[#b3261e]" : "border-[#dfe4e0] bg-white text-[#45505e]"}`}>
             {syncing
               ? <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.37 0 0 5.37 0 12h4Z"/></svg>
               : <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20-7z"/></svg>
             }
-            {syncing ? "Sincronizando…" : "Sync Drivin"}
+            {syncing ? "Sincronizando…" : syncMsg ? "Reintentar Drivin" : "Sync Drivin"}
           </button>
           <label className="flex items-center gap-1.5 text-sm text-[#7a8794]">
             Desde
