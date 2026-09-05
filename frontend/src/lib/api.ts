@@ -27,6 +27,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   try {
     res = await fetch(`${API_URL}${path}`, {
       ...options,
+      cache: "no-store", // siempre datos frescos: evita ver clientes/direcciones cacheados
       headers: {
         "Content-Type": "application/json",
         ...authHeader(),
