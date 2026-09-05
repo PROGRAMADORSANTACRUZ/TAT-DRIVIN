@@ -23,8 +23,10 @@ import { docNovedad, imprimirNovedad } from "@/lib/novedadDoc";
 import { dlLabel, rnLabel } from "@/lib/utils";
 
 const NIVEL_ESTADOS: NivelEstado[] = ["Sin Novedad", "Con Novedad", "Doc.Pendiente", "Reenvio", "Rechazado", "Parcial Con Novedad"];
-// Estados que se muestran como tarjetas de estadística (sin Rechazado ni Parcial Con Novedad).
-const STATS_ESTADOS: NivelEstado[] = ["Sin Novedad", "Con Novedad", "Doc.Pendiente", "Reenvio"];
+// Estados que se muestran como tarjetas de estadística (incluye los que llegan de Drivin).
+const STATS_ESTADOS: NivelEstado[] = ["Sin Novedad", "Con Novedad", "Rechazado", "Parcial Con Novedad", "Doc.Pendiente", "Reenvio"];
+// Etiqueta corta para las tarjetas.
+const ESTADO_LABEL: Record<string, string> = { "Parcial Con Novedad": "Parcial" };
 
 const NOVEDADES_LIST = [
   "Averías", "Cliente Cerrado", "Cliente Sin Sistema",
@@ -49,11 +51,12 @@ const fmtKg = (n: number) =>
   n.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function fechaHoy() { return new Date().toISOString().slice(0, 10); }
-function fechaAyer() {
+function fechaHace(dias: number) {
   const d = new Date();
-  d.setDate(d.getDate() - 1);
+  d.setDate(d.getDate() - dias);
   return d.toISOString().slice(0, 10);
 }
+function fechaAyer() { return fechaHace(1); }
 
 type RowDraft = {
   estadoEntrega: NivelEstado;
@@ -92,6 +95,7 @@ export default function NivelServicioPage() {
   const [buscar, setBuscar] = useState("");
   const [desde, setDesde] = useState(fechaAyer);
   const [hasta, setHasta] = useState(fechaHoy);
+  const [filtroEstado, setFiltroEstado] = useState<NivelEstado | null>(null);
   const [pagina, setPagina] = useState(1);
   const POR_PAGINA = 20;
 
@@ -250,16 +254,22 @@ export default function NivelServicioPage() {
   }, [planillasFiltradas, esTAT, novedades, infoPorOrden, desde, hasta]);
 
   const rowsFiltrados = useMemo(() => {
+    let base = allRows;
+    if (filtroEstado) {
+      base = base.filter((r) =>
+        (drafts.get(`${r.planillaId}|${r.item.numeroOrden}`)?.estadoEntrega ?? "Sin Novedad") === filtroEstado
+      );
+    }
     const t = buscar.trim().toLowerCase();
-    if (!t) return allRows;
-    return allRows.filter(({ planilla, item }) =>
+    if (!t) return base;
+    return base.filter(({ planilla, item }) =>
       [planilla.placa, planilla.conductor, planilla.auxiliarRuta, item.numeroOrden, item.cliente, item.destino, item.nombreDestino]
         .some((f) => f?.toLowerCase().includes(t))
     );
-  }, [allRows, buscar]);
+  }, [allRows, buscar, filtroEstado, drafts]);
 
   // Resetear página al cambiar filtros
-  useEffect(() => { setPagina(1); }, [buscar, desde, hasta]);
+  useEffect(() => { setPagina(1); }, [buscar, desde, hasta, filtroEstado]);
 
   const totalPaginas = Math.max(1, Math.ceil(rowsFiltrados.length / POR_PAGINA));
   const pagActual = Math.min(pagina, totalPaginas);
@@ -420,28 +430,51 @@ export default function NivelServicioPage() {
             Hasta
             <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="rounded-lg border border-[#dfe4e0] bg-white px-2 py-1.5 text-sm text-[#14352a] outline-none focus:border-[#2f8f4e]" />
           </label>
+          <div className="flex items-center gap-1">
+            {[
+              { label: "Hoy", d: fechaHoy(), h: fechaHoy() },
+              { label: "Ayer", d: fechaAyer(), h: fechaAyer() },
+              { label: "7 días", d: fechaHace(6), h: fechaHoy() },
+              { label: "30 días", d: fechaHace(29), h: fechaHoy() },
+            ].map((p) => {
+              const activo = desde === p.d && hasta === p.h;
+              return (
+                <button key={p.label} onClick={() => { setDesde(p.d); setHasta(p.h); }}
+                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${activo ? "border-[#2f8f4e] bg-[#e8f3e2] text-[#2f8f4e]" : "border-[#dfe4e0] bg-white text-[#45505e] hover:bg-[#f4f6f3]"}`}>
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </header>
 
       {error && <div className="mb-4 shrink-0 rounded-lg border border-[#f0c4c1] bg-[#fbeceb] px-4 py-2.5 text-sm text-[#b3261e]">{error}</div>}
 
-      {/* Stats */}
-      <div className="mb-4 grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-5">
+      {/* Stats (clic para filtrar por tipo) */}
+      <div className="mb-4 grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         {loading ? (
-          Array.from({ length: 5 }).map((_, i) => <SkeletonStat key={i} />)
+          Array.from({ length: 7 }).map((_, i) => <SkeletonStat key={i} />)
         ) : (
           <>
-            <div className="rounded-xl border border-[#e1e9dd] bg-white p-4 shadow-sm">
+            <button
+              onClick={() => setFiltroEstado(null)}
+              className={`rounded-xl border bg-white p-4 text-left shadow-sm transition ${filtroEstado === null ? "border-[#14352a] ring-2 ring-[#14352a]/15" : "border-[#e1e9dd] hover:border-[#c8d4c2]"}`}
+            >
               <p className="text-xs font-medium uppercase tracking-wide text-[#7a8794]">Total</p>
               <p className="mt-1 text-2xl font-bold text-[#14352a]">{allRows.length}</p>
-            </div>
+            </button>
             {STATS_ESTADOS.map((e) => {
               const s = ESTADO_STYLE[e];
+              const activo = filtroEstado === e;
               return (
-                <div key={e} className={`rounded-xl border p-4 shadow-sm ${s.bg} ${s.border}`}>
-                  <p className={`text-xs font-medium uppercase tracking-wide ${s.text}`}>{e}</p>
+                <button key={e}
+                  onClick={() => setFiltroEstado((prev) => (prev === e ? null : e))}
+                  className={`rounded-xl border p-4 text-left shadow-sm transition ${s.bg} ${activo ? `${s.border} ring-2 ring-current` : `${s.border} hover:opacity-90`}`}
+                >
+                  <p className={`truncate text-xs font-medium uppercase tracking-wide ${s.text}`}>{ESTADO_LABEL[e] ?? e}</p>
                   <p className={`mt-1 text-2xl font-bold ${s.text}`}>{stats[e]}</p>
-                </div>
+                </button>
               );
             })}
           </>

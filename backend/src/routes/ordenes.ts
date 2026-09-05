@@ -1388,6 +1388,7 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
           reason?: string;
           reason_code?: string;
           scenario_token?: string;
+          client_name?: string;
         };
       }[];
     };
@@ -1420,31 +1421,35 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
     const planillasActivas = await prisma.planillaDespacho.findMany({
       where: { anulada: false },
     });
-    const planillaPorOrden = new Map<string, (typeof planillasActivas)[number] & { itemCliente?: string }>();
+    const planillaPorOrden = new Map<string, (typeof planillasActivas)[number] & { itemCliente?: string; itemNumeroOrden?: string }>();
     for (const p of planillasActivas) {
       let items: { numeroOrden?: string; cliente?: string }[] = [];
       try { items = p.items ? JSON.parse(p.items) : []; } catch { items = []; }
       for (const it of items) {
-        if (it.numeroOrden) planillaPorOrden.set(norm(it.numeroOrden), { ...p, itemCliente: it.cliente });
+        if (it.numeroOrden) planillaPorOrden.set(norm(it.numeroOrden), { ...p, itemCliente: it.cliente, itemNumeroOrden: it.numeroOrden });
       }
     }
 
-    // Precarga novedades de las planillas activas (evita N+1 dentro del loop).
-    const planillaIds = planillasActivas.map((p) => p.id);
-    const novedadesExistentes = planillaIds.length
-      ? await prisma.novedad.findMany({ where: { planillaId: { in: planillaIds } } })
-      : [];
-    const novedadPorClave = new Map<string, (typeof novedadesExistentes)[number]>();
-    for (const n of novedadesExistentes) {
-      if (n.planillaId && n.numeroOrden) novedadPorClave.set(`${n.planillaId}||${norm(n.numeroOrden)}`, n);
+    // El nivel de servicio se maneja por numeroOrden (factura): la remisión puede
+    // venir de una planilla o haberse enviado manualmente (novedad huérfana).
+    // Indexamos TODAS las novedades por factura normalizada.
+    const todasNovedades = await prisma.novedad.findMany();
+    const novedadPorOrden = new Map<string, (typeof todasNovedades)[number]>();
+    for (const n of todasNovedades) {
+      if (!n.numeroOrden) continue;
+      const k = norm(n.numeroOrden);
+      const prev = novedadPorOrden.get(k);
+      // Prefiere la novedad ligada a planilla sobre una huérfana.
+      if (!prev || (!prev.planillaId && n.planillaId)) novedadPorOrden.set(k, n);
     }
     const nuevasNovedades: {
       consecutivo: number; fecha: string; estadoEntrega: string; novedad: string | null;
-      planillaId: string; placa: string | null; conductor: string | null;
+      planillaId: string | null; placa: string | null; conductor: string | null;
       auxiliarRuta: string | null; cliente: string | null; numeroOrden: string;
     }[] = [];
 
     let actualizados = 0;
+    let nivelActualizados = 0;
     const conteo = { approved: 0, partial: 0, rejected: 0, pending: 0, otros: 0 };
 
     for (const pod of pods) {
@@ -1477,36 +1482,47 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
         }
       }
 
-      // Nivel de servicio: reflejar Rechazado / Parcial Con Novedad desde Drivin.
-      const planilla = planillaPorOrden.get(code);
-      if (nivelEstado && planilla) {
-        const existente = novedadPorClave.get(`${planilla.id}||${code}`);
+      // Nivel de servicio: refleja Rechazado / Parcial Con Novedad desde Drivin.
+      const existente = novedadPorOrden.get(code);
+      if (nivelEstado) {
         if (existente) {
-          // No pisar un estado ya trabajado manualmente distinto de "Sin Novedad".
+          // No pisa un estado ya trabajado manualmente distinto de "Sin Novedad".
           if (existente.estadoEntrega === "Sin Novedad" || existente.estadoEntrega === nivelEstado) {
             await prisma.novedad.update({
               where: { id: existente.id },
-              data: {
-                estadoEntrega: nivelEstado,
-                ...(motivo ? { novedad: motivo } : {}),
-              },
+              data: { estadoEntrega: nivelEstado, ...(motivo ? { novedad: motivo } : {}) },
             });
+            existente.estadoEntrega = nivelEstado;
+            nivelActualizados++;
           }
         } else {
+          // No existe novedad: la crea (ligada a planilla si la hay, si no huérfana).
+          const planilla = planillaPorOrden.get(code);
           nuevasNovedades.push({
-            consecutivo: planilla.consecutivo,
-            fecha: planilla.fecha,
+            consecutivo: planilla?.consecutivo ?? 0,
+            fecha: planilla?.fecha ?? hoy,
             estadoEntrega: nivelEstado,
             novedad: motivo,
-            planillaId: planilla.id,
-            placa: planilla.placa,
-            conductor: planilla.conductor,
-            auxiliarRuta: planilla.auxiliarRuta,
-            cliente: planilla.itemCliente ?? null,
-            numeroOrden: a.code,
+            planillaId: planilla?.id ?? null,
+            placa: planilla?.placa ?? null,
+            conductor: planilla?.conductor ?? null,
+            auxiliarRuta: planilla?.auxiliarRuta ?? null,
+            cliente: planilla?.itemCliente ?? a.client_name ?? null,
+            numeroOrden: planilla?.itemNumeroOrden ?? a.code,
           });
           // Evita duplicados si el mismo code llega repetido.
-          novedadPorClave.set(`${planilla.id}||${code}`, { estadoEntrega: nivelEstado } as (typeof novedadesExistentes)[number]);
+          novedadPorOrden.set(code, { estadoEntrega: nivelEstado } as (typeof todasNovedades)[number]);
+          nivelActualizados++;
+        }
+      } else if (nuevoEstado === "Entregado" && existente) {
+        // Se entregó: si Drivin la había marcado Rechazado/Parcial, vuelve a Sin Novedad.
+        if (existente.estadoEntrega === "Rechazado" || existente.estadoEntrega === "Parcial Con Novedad") {
+          await prisma.novedad.update({
+            where: { id: existente.id },
+            data: { estadoEntrega: "Sin Novedad" },
+          });
+          existente.estadoEntrega = "Sin Novedad";
+          nivelActualizados++;
         }
       }
     }
@@ -1515,7 +1531,7 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
       await prisma.novedad.createMany({ data: nuevasNovedades });
     }
 
-    res.json({ actualizados, pods: pods.length, conteo });
+    res.json({ actualizados, nivelActualizados, pods: pods.length, conteo });
   } catch (err) {
     next(err);
   }
