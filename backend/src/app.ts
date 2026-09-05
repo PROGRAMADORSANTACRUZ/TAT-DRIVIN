@@ -19,6 +19,11 @@ export function createApp() {
   app.use(express.json());
   app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));
 
+  // Nunca cachear respuestas del API (evita que el navegador muestre datos viejos).
+  app.use("/api", (_req, res, next) => {
+    res.set("Cache-Control", "no-store");
+    next();
+  });
   app.use("/api", routes);
 
   app.use(notFoundHandler);
