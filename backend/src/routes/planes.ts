@@ -147,7 +147,7 @@ export async function buildScenarioPayload(opts: {
   for (const c of clientesGS) {
     const entry: GeoEntry = {
       direccion: c.direccion,
-      ciudad: c.provincia ?? c.region ?? null,
+      ciudad: c.comuna ?? c.provincia ?? c.region ?? null,
       pais: c.pais,
       lat: c.lat,
       lon: c.lon,
@@ -192,7 +192,7 @@ export async function buildScenarioPayload(opts: {
       nombre: c.cliente ?? undefined,
       direccion: c.direccion ?? undefined,
       codigo: c.codigoDireccion ?? undefined,
-      ciudad: c.provincia ?? c.region ?? null,
+      ciudad: c.comuna ?? c.provincia ?? c.region ?? null,
       pais: c.pais,
       lat: c.lat,
       lng: c.lon,
@@ -271,7 +271,8 @@ export async function buildScenarioPayload(opts: {
       geoByCliente.get(normKey(clienteGS)) ??
       geoByCliente.get(normKey(cliente)) ??
       null;
-    const city = asignado?.ciudad || geo?.ciudad || clienteGS || destino;
+    // Comuna/barrio para Drivin (campo `city`). Nunca usa el nombre del cliente.
+    const city = asignado?.ciudad || geo?.ciudad || null;
     // Vendedor por defecto del cliente (si la remisión no trae vendedor propio):
     // primero el del concatenado, luego GS, luego el maestro TAT por código.
     const vendedorCliente =
@@ -344,7 +345,7 @@ export async function buildScenarioPayload(opts: {
       client_code: codigoFinal,
       address: titleCase(asignado?.direccion ?? direccionTat ?? drivinMatch?.address1 ?? geo?.direccion ?? destino),
       reference: referencia ? titleCase(referencia) : undefined,
-      city: titleCase(city),
+      city: city ? titleCase(city) : undefined,
       state: departamento ? titleCase(departamento) : undefined,
       country: asignado?.pais ?? geo?.pais ?? "Colombia",
       lat: latStr ? parseFloat(latStr) : null,

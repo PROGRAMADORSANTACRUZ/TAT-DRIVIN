@@ -1264,7 +1264,10 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
     }));
 
     // Reemplaza solo ESTA factura (idempotente al re-escanear), acumula el resto.
+    // Si estaba marcada como "Reenvio" en nivel de servicio, se limpia su novedad
+    // para que el proceso arranque desde cero (como si nunca se hubiera montado).
     await prisma.$transaction([
+      prisma.novedad.deleteMany({ where: { numeroOrden, estadoEntrega: "Reenvio" } }),
       prisma.orden.deleteMany({ where: { numeroOrden, distribucion: "TAT", tatOrigen: origen } }),
       prisma.orden.createMany({ data: lineas }),
     ]);
@@ -1462,10 +1465,16 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
       const { orden: nuevoEstado, nivel: nivelEstado } = mapearEstado(status);
       const motivo = a.reason || a.reason_code || null;
 
-      // Actualiza el estado de la(s) orden(es) que coinciden por número de factura.
+      // Remisiones que coinciden por número de factura.
       const ordenes = ordenPorCode.get(code);
+      // No tocar remisiones recién subidas (Pendiente, aún sin despachar): una POD
+      // vieja del mismo número de factura no debe sacarlas de asignaciones ni
+      // marcarlas como enviadas/entregadas antes de generar el plan.
+      if (ordenes?.length && ordenes.every((o) => o.estado === "Pendiente")) continue;
+
+      // Actualiza el estado solo de las órdenes ya despachadas (Enviado).
       if (nuevoEstado && ordenes?.length) {
-        const idsAActualizar = ordenes.filter((o) => o.estado !== nuevoEstado).map((o) => o.id);
+        const idsAActualizar = ordenes.filter((o) => o.estado === "Enviado" && o.estado !== nuevoEstado).map((o) => o.id);
         if (idsAActualizar.length) {
           const { count } = await prisma.orden.updateMany({
             where: { id: { in: idsAActualizar } },

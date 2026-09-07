@@ -50,6 +50,12 @@ const RESPONSABILIDADES_LIST = [
 const fmtKg = (n: number) =>
   n.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// TAT usa facturas electrónicas (FE / 1FE); Agropecuaria usa B / P. Sirve para
+// separar el nivel de servicio aunque la orden ya se haya borrado.
+function esTATNumero(num: string | null | undefined): boolean {
+  return /^\s*1?FE/i.test(String(num ?? ""));
+}
+
 function fechaHoy() { return new Date().toISOString().slice(0, 10); }
 function fechaHace(dias: number) {
   const d = new Date();
@@ -222,7 +228,7 @@ export default function NivelServicioPage() {
     for (const p of planillasFiltradas) {
       for (const item of (p.items ?? [])) {
         numerosEnPlanillas.add(item.numeroOrden);
-        const esTatItem = item.area === "TAT" || item.codigoArea?.startsWith("TAT") || false;
+        const esTatItem = item.area === "TAT" || item.codigoArea?.startsWith("TAT") || esTATNumero(item.numeroOrden);
         if (esTAT && !esTatItem) continue;
         if (!esTAT && esTatItem) continue;
         rows.push({ planillaId: p.id, planilla: p, item });
@@ -235,7 +241,7 @@ export default function NivelServicioPage() {
       const f = n.fecha || new Date(n.createdAt).toISOString().slice(0, 10);
       if ((desde && f < desde) || (hasta && f > hasta)) continue;
       const info = infoPorOrden.get(n.numeroOrden);
-      const esTatItem = info?.distribucion === "TAT";
+      const esTatItem = esTATNumero(n.numeroOrden) || info?.distribucion === "TAT";
       if (esTAT && !esTatItem) continue;
       if (!esTAT && esTatItem) continue;
       const planilla = {
