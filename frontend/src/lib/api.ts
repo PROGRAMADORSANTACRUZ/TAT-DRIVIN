@@ -22,6 +22,26 @@ export class ApiError extends Error {
   }
 }
 
+// Mensaje legible cuando el backend no entrega uno (p. ej. página HTML 502 del proxy).
+function mensajePorStatus(status: number): string {
+  switch (status) {
+    case 0: return "No se pudo conectar con el servidor. Verifica tu conexión a internet.";
+    case 400: return "Datos inválidos en la solicitud.";
+    case 401: return "Tu sesión expiró. Vuelve a iniciar sesión.";
+    case 403: return "No tienes permiso para realizar esta acción.";
+    case 404: return "No se encontró el recurso solicitado.";
+    case 408: return "La solicitud tardó demasiado. Intenta de nuevo.";
+    case 413: return "La solicitud es demasiado grande.";
+    case 429: return "Demasiadas solicitudes. Espera un momento e intenta de nuevo.";
+    case 500: return "Error interno del servidor. Intenta de nuevo o contacta a soporte.";
+    case 502:
+    case 503:
+    case 504:
+      return `El servidor no respondió correctamente (${status}). Puede estar reiniciándose o la operación tardó demasiado; intenta de nuevo en unos segundos.`;
+    default: return `Ocurrió un error (${status}).`;
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let res: Response;
   try {
@@ -35,16 +55,22 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       },
     });
   } catch {
-    throw new ApiError(0, "No se pudo conectar con el servidor");
+    throw new ApiError(0, mensajePorStatus(0));
   }
-
-  const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new ApiError(res.status, data?.error ?? "Ocurrió un error");
+    // Intenta leer el mensaje del backend (JSON { error }); si la respuesta no es
+    // JSON (p. ej. página 502 del proxy/Cloudflare) usa un mensaje claro por status.
+    let backendMsg = "";
+    try {
+      const err = await res.clone().json();
+      backendMsg = typeof err?.error === "string" ? err.error
+        : typeof err?.message === "string" ? err.message : "";
+    } catch { /* respuesta no-JSON */ }
+    throw new ApiError(res.status, backendMsg || mensajePorStatus(res.status));
   }
 
-  return data as T;
+  return (await res.json().catch(() => ({}))) as T;
 }
 
 export function login(cedula: string, password: string): Promise<LoginResponse> {
