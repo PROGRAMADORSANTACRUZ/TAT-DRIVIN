@@ -9,6 +9,7 @@ import {
   getOrdenes,
   getPlanes,
   getPlanNombres,
+  getReplicas,
   getSchemas,
   getVehiculosExternos,
   type Orden,
@@ -69,6 +70,10 @@ export default function DiagramaPage() {
 
   const [buscar, setBuscar] = useState("");
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [replicas, setReplicas] = useState<Record<string, number>>({});
+  // Reenvío (réplica) de vehículos ya enviados a Drivin.
+  const [confirmReenvio, setConfirmReenvio] = useState(false);
+  const [reenviarMode, setReenviarMode] = useState(false);
 
   const [showPlanes, setShowPlanes] = useState(false);
   const [planes, setPlanes] = useState<Plan[]>([]);
@@ -98,6 +103,7 @@ export default function DiagramaPage() {
       const [vehs, ords] = await Promise.all([getVehiculosExternos(), getOrdenes()]);
       setVehiculos(vehs);
       setOrdenes(ords);
+      getReplicas().then(setReplicas).catch(() => { /* opcional */ });
       setChecked((prev) => {
         if (prev.size > 0) return prev;
         return new Set(); // sin marcar por defecto
@@ -144,23 +150,26 @@ export default function DiagramaPage() {
     );
   }, [grupos, buscar]);
 
-  const checkedConPendientes = useMemo(
-    () => grupos.filter((g) => checked.has(g.vehiculo.placa.toUpperCase()) && g.pendientes > 0).map((g) => g.vehiculo.placa),
+  // Vehículos seleccionados con órdenes (permite reenviar aunque ya estén enviadas).
+  const checkedVehiculos = useMemo(
+    () => grupos.filter((g) => checked.has(g.vehiculo.placa.toUpperCase()) && g.ordenes.length > 0),
     [grupos, checked]
   );
+  const placasParaEnviar = useMemo(() => checkedVehiculos.map((g) => g.vehiculo.placa), [checkedVehiculos]);
+  // Hay reenvío si algún vehículo seleccionado ya está completamente enviado a Drivin.
+  const hayReenvio = useMemo(() => checkedVehiculos.some((g) => g.pendientes === 0 && g.enviadas > 0), [checkedVehiculos]);
 
   // Flotas distintas de los vehículos seleccionados (para autoseleccionar o dejar escoger).
   const flotasSeleccionadas = useMemo(() => {
     const set = new Set<string>();
-    for (const g of grupos) {
-      if (!checked.has(g.vehiculo.placa.toUpperCase()) || g.pendientes === 0) continue;
+    for (const g of checkedVehiculos) {
       for (const f of String(g.vehiculo.flotas ?? "").split(/[,;/]/)) {
         const t = f.trim();
         if (t) set.add(t);
       }
     }
     return [...set];
-  }, [grupos, checked]);
+  }, [checkedVehiculos]);
 
   function toggleCheck(placa: string) {
     setChecked((prev) => {
@@ -208,6 +217,20 @@ export default function DiagramaPage() {
     }).catch((err) => console.error(err));
   }
 
+  // Si hay vehículos ya enviados en la selección, pide confirmación antes de reenviar.
+  function iniciarEnvio() {
+    if (checkedVehiculos.length === 0) return;
+    if (hayReenvio) { setConfirmReenvio(true); return; }
+    setReenviarMode(false);
+    abrirCrearPlan();
+  }
+
+  function confirmarReenvio() {
+    setConfirmReenvio(false);
+    setReenviarMode(true);
+    abrirCrearPlan();
+  }
+
   async function handleEnviarDrivin() {
     if (planModo === "nuevo" && !planFecha) return;
     if (planModo === "existente" && !planTokenSel) return;
@@ -228,17 +251,19 @@ export default function DiagramaPage() {
           fecha: planFecha,
           schemaName: planSchema,
           fleetName: planFlota || undefined,
-          placas: checkedConPendientes.length > 0 ? checkedConPendientes : undefined,
+          placas: placasParaEnviar.length > 0 ? placasParaEnviar : undefined,
+          reenviar: reenviarMode,
         });
         meta = result._meta as PlanMeta;
         const conf = meta.conflictos ?? [];
         const aviso = conf.length > 0
           ? ` ⚠ ${conf.length} dirección(es) con órdenes en varios vehículos: ${conf.slice(0, 3).map((c) => `${c.cliente} (${c.vehiculos.join("/")})`).join("; ")}. Revisa la asignación.`
           : "";
-        setMessage(`Plan creado en Drivin: ${meta.vehiculos} vehículos · ${meta.ordenes} órdenes.${aviso}`);
+        setMessage(`${reenviarMode ? "Réplica enviada" : "Plan creado"} en Drivin: ${meta.vehiculos} vehículos · ${meta.ordenes} órdenes.${aviso}`);
       }
       setPlanMeta(meta);
       setPlanModal(false);
+      setReenviarMode(false);
       setChecked(new Set());
       await load(false);
     } catch (err) {
@@ -270,10 +295,10 @@ export default function DiagramaPage() {
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
             Ver planes Drivin
           </button>
-          <button onClick={abrirCrearPlan} disabled={checkedConPendientes.length === 0}
+          <button onClick={iniciarEnvio} disabled={checkedVehiculos.length === 0}
             className="inline-flex items-center gap-2 rounded-lg bg-[#2f8f4e] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#277a42] disabled:opacity-40">
             <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4 20-7z"/></svg>
-            Enviar a Drivin {checkedConPendientes.length > 0 && `(${checkedConPendientes.length})`}
+            Enviar a Drivin {checkedVehiculos.length > 0 && `(${checkedVehiculos.length})`}
           </button>
         </div>
       </header>
@@ -331,9 +356,19 @@ export default function DiagramaPage() {
                       <p className="text-xs text-[#a8c9b0]">Cap. {v.capacidad ?? "—"} kg</p>
                       <p className="text-xs text-[#a8c9b0]">{rem.length} remisiones</p>
                     </div>
-                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${remEnviadas === rem.length ? "bg-[#2f8f4e] text-white" : "bg-[#e6effb] text-[#1a5fb4]"}`}>
-                      {remEnviadas}/{rem.length} env.
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {(() => {
+                        const reps = replicas[v.placa.toUpperCase()] ?? replicas[v.placa] ?? 0;
+                        return reps > 0 ? (
+                          <span className="rounded-full bg-[#fdf0e6] px-2 py-0.5 text-[10px] font-bold text-[#7c4a00]" title={`Enviado ${reps} vez(es) a Drivin`}>
+                            {reps} rep.
+                          </span>
+                        ) : null;
+                      })()}
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${remEnviadas === rem.length ? "bg-[#2f8f4e] text-white" : "bg-[#e6effb] text-[#1a5fb4]"}`}>
+                        {remEnviadas}/{rem.length} env.
+                      </span>
+                    </div>
                   </div>
 
                   <div className="bg-[#f7faf5] px-4 py-2">
@@ -384,6 +419,39 @@ export default function DiagramaPage() {
         <span className="flex items-center gap-1.5"><span className="inline-flex h-2 w-2 rounded-full bg-[#b5941e]" /> Pendiente de envío</span>
         <span className="flex items-center gap-1.5"><span className="block h-2 w-6 rounded-full bg-[#b3261e]" /> Capacidad &gt;95%</span>
       </div>
+
+      {/* Modal: confirmar reenvío (réplica) a Drivin */}
+      {confirmReenvio && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setConfirmReenvio(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#fdf0e6] text-[#7c4a00]">
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+              </span>
+              <h3 className="text-lg font-semibold text-[#14352a]">Reenviar a Drivin</h3>
+            </div>
+            <p className="mb-3 text-sm text-[#45505e]">
+              {checkedVehiculos.filter((g) => g.pendientes === 0 && g.enviadas > 0).length} de los vehículos seleccionados ya se enviaron a Drivin.
+              Si continúas se creará una <b>nueva réplica</b> del plan (se volverán a montar sus remisiones).
+            </p>
+            <div className="mb-4 max-h-40 overflow-auto rounded-lg border border-[#eceef0] bg-[#f7faf5] p-2 text-xs text-[#45505e]">
+              {checkedVehiculos.filter((g) => g.pendientes === 0 && g.enviadas > 0).map((g) => {
+                const reps = replicas[g.vehiculo.placa.toUpperCase()] ?? replicas[g.vehiculo.placa] ?? 0;
+                return (
+                  <div key={g.vehiculo.id} className="flex items-center justify-between px-1 py-0.5">
+                    <span className="font-medium text-[#14352a]">{g.vehiculo.placa}</span>
+                    <span>{g.enviadas}/{consolidarRemisiones(g.ordenes).length} env.{reps > 0 ? ` · ${reps} rep.` : ""}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmReenvio(false)} className="rounded-lg border border-[#dfe4e0] bg-white px-4 py-2 text-sm font-medium text-[#45505e] hover:bg-[#f4f6f3]">Cancelar</button>
+              <button onClick={confirmarReenvio} className="rounded-lg bg-[#2f8f4e] px-4 py-2 text-sm font-medium text-white hover:bg-[#277a42]">Sí, reenviar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: planes Drivin */}
       {showPlanes && (

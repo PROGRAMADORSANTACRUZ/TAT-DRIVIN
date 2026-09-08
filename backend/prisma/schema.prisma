@@ -301,3 +301,11 @@ model CambioDespacho {
   @@index([hecho])
 }
 
+// Contador de veces que se ha enviado (replicado) a Drivin el plan de un vehículo.
+// Se reinicia en la limpieza diaria (junto con las órdenes).
+model EnvioReplica {
+  placa     String   @id
+  veces     Int      @default(0)
+  updatedAt DateTime @default(now()) @updatedAt
+}
+

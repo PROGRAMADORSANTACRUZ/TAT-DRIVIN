@@ -84,10 +84,13 @@ export async function buildScenarioPayload(opts: {
   schemaName: string;
   fleetName: string | null;
   placas?: string[];
+  incluirEnviadas?: boolean;
 }) {
+  // Al reenviar (réplica) se incluyen también las órdenes ya enviadas.
+  const estadosExcluidos = opts.incluirEnviadas ? ["Entregado", "Rechazado"] : ESTADOS_NO_ENVIABLES;
   const where: Record<string, unknown> = {
     asignadoVehiculo: { not: null },
-    estado: { notIn: ESTADOS_NO_ENVIABLES },
+    estado: { notIn: estadosExcluidos },
   };
   // Si se pasan placas específicas, filtrar solo esas
   if (opts.placas && opts.placas.length > 0) {
@@ -406,6 +409,30 @@ export async function buildScenarioPayload(opts: {
   };
 }
 
+// Suma 1 a la cuenta de réplicas (envíos a Drivin) de cada placa. Se reinicia en
+// la limpieza diaria junto con las órdenes.
+async function incrementarReplicas(placas: string[]): Promise<void> {
+  for (const placa of [...new Set(placas.filter(Boolean))]) {
+    await prisma.envioReplica.upsert({
+      where: { placa },
+      create: { placa, veces: 1 },
+      update: { veces: { increment: 1 } },
+    });
+  }
+}
+
+// GET /api/planes/replicas  -> { placa: veces } para mostrar el contador por card
+router.get("/replicas", requireAuth, async (_req, res, next) => {
+  try {
+    const rows = await prisma.envioReplica.findMany();
+    const map: Record<string, number> = {};
+    for (const r of rows) map[r.placa] = r.veces;
+    res.json(map);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/planes?date=YYYY-MM-DD  -> lista escenarios de Drivin
 router.get("/", requireAuth, async (req, res, next) => {
   try {
@@ -485,6 +512,7 @@ router.post("/", requireAuth, async (req, res, next) => {
     ).trim();
     const fleetName = String(req.body?.fleetName ?? "").trim() || null;
     const placas = Array.isArray(req.body?.placas) ? (req.body.placas as string[]) : undefined;
+    const reenviar = Boolean(req.body?.reenviar);
 
     if (!descripcion || !fecha) {
       throw new HttpError(400, "Descripción y fecha son obligatorias");
@@ -496,6 +524,7 @@ router.post("/", requireAuth, async (req, res, next) => {
       schemaName,
       fleetName,
       placas,
+      incluirEnviadas: reenviar,
     });
 
     const resp = await fetch(`${env.DRIVIN_API_URL}/v2/scenarios`, {
@@ -525,6 +554,9 @@ router.post("/", requireAuth, async (req, res, next) => {
       where: updateWhere,
       data: { estado: "Enviado" },
     });
+
+    // Cuenta esta réplica (envío) por cada vehículo del plan.
+    await incrementarReplicas((payload.vehicles as { code?: string }[]).map((v) => v.code ?? ""));
 
     res.status(201).json({
       ...result,
@@ -651,6 +683,11 @@ router.post("/agregar", requireAuth, async (req, res, next) => {
       },
       data: { estado: "Enviado" },
     });
+
+    // Cuenta la réplica por cada vehículo con órdenes nuevas agregadas.
+    await incrementarReplicas(
+      clientesFiltrados.flatMap((c) => (c.orders as { vehicle_code?: string }[]).map((o) => o.vehicle_code ?? ""))
+    );
 
     const response = (addResult.response ?? {}) as Record<string, unknown>;
     res.status(201).json({

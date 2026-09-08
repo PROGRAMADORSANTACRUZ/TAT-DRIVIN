@@ -12,6 +12,7 @@ export function iniciarLimpiezaDiaria(): void {
     async () => {
       try {
         const { count } = await prisma.orden.deleteMany({});
+        await prisma.envioReplica.deleteMany({});
         console.log(`[limpieza 18:00] ${count} órdenes eliminadas (reset diario).`);
       } catch (e) {
         console.error("[limpieza 18:00] error:", (e as Error).message);

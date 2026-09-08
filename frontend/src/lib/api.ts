@@ -574,6 +574,7 @@ export interface PlanInput {
   schemaName: string;
   fleetName?: string;
   placas?: string[];
+  reenviar?: boolean;
 }
 
 export interface PlanMeta {
@@ -602,6 +603,11 @@ export function getSchemas(): Promise<string[]> {
 
 export function getFlotas(): Promise<string[]> {
   return request<string[]>("/api/planes/flotas");
+}
+
+// Veces que se ha enviado (replicado) el plan de cada vehículo a Drivin.
+export function getReplicas(): Promise<Record<string, number>> {
+  return request<Record<string, number>>("/api/planes/replicas");
 }
 
 export function crearPlan(
