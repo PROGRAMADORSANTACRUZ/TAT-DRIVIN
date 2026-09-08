@@ -593,6 +593,8 @@ router.post("/agregar", requireAuth, async (req, res, next) => {
   try {
     const scenarioToken = String(req.body?.scenarioToken ?? "").trim();
     if (!scenarioToken) throw new HttpError(400, "Falta el token del escenario");
+    const reenviar = Boolean(req.body?.reenviar);
+    const placas = Array.isArray(req.body?.placas) ? (req.body.placas as string[]) : undefined;
 
     // 1. Verificar estado del escenario.
     const scenResp = await fetch(
@@ -630,6 +632,8 @@ router.post("/agregar", requireAuth, async (req, res, next) => {
       fecha: new Date().toISOString().slice(0, 10),
       schemaName: "Distribucion Rutas Agropecuaria",
       fleetName: null,
+      placas,
+      incluirEnviadas: reenviar,
     });
 
     // 4. Filtrar duplicados: solo enviar órdenes que NO existen ya.

@@ -240,11 +240,14 @@ export default function DiagramaPage() {
     try {
       let meta: PlanMeta;
       if (planModo === "existente") {
-        const result = await agregarAPlan(planTokenSel);
+        const result = await agregarAPlan(planTokenSel, {
+          reenviar: reenviarMode,
+          placas: placasParaEnviar.length > 0 ? placasParaEnviar : undefined,
+        });
         meta = result._meta as PlanMeta;
         const nuevas = Number(meta.nuevas ?? 0);
         const dups = Number(meta.duplicadas ?? 0);
-        setMessage(nuevas === 0 ? `Sin órdenes nuevas: las ${dups} ya existían.` : `${nuevas} órdenes agregadas al plan.`);
+        setMessage(nuevas === 0 ? `Sin órdenes nuevas: las ${dups} ya existían en ese plan.` : `${nuevas} órdenes agregadas al plan.`);
       } else {
         const result = await crearPlan({
           descripcion: `${planBase} ${planFecha.split("-").reverse().join("/")}`,
@@ -519,6 +522,11 @@ export default function DiagramaPage() {
                   </button>
                 ))}
               </div>
+              {reenviarMode && (
+                <div className="rounded-lg border border-[#f0dcc4] bg-[#fdf0e6] px-3 py-2 text-xs text-[#7c4a00]">
+                  Reenvío (réplica): se volverán a montar las remisiones ya enviadas. Usa <b>Crear nuevo plan</b> para generar una copia nueva en Drivin.
+                </div>
+              )}
               {planModo === "nuevo" ? (
                 <>
                   <label className="flex flex-col gap-1">

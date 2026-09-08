@@ -620,11 +620,12 @@ export function crearPlan(
 }
 
 export function agregarAPlan(
-  scenarioToken: string
+  scenarioToken: string,
+  opts?: { reenviar?: boolean; placas?: string[] }
 ): Promise<{ _meta: PlanMeta; [key: string]: unknown }> {
   return request<{ _meta: PlanMeta; [key: string]: unknown }>(
     "/api/planes/agregar",
-    { method: "POST", body: JSON.stringify({ scenarioToken }) }
+    { method: "POST", body: JSON.stringify({ scenarioToken, reenviar: opts?.reenviar, placas: opts?.placas }) }
   );
 }
 
