@@ -20,6 +20,22 @@ const DRIVIN_HEADERS = () => ({
   "Content-Type": "application/json",
 });
 
+// Convierte un error de Drivin en un mensaje legible (ej. "Invalid address
+// (area_level_3: City cannot be empty) — cliente Abata Sas").
+function drivinErrorMessage(status: number, result: Record<string, unknown>): string {
+  const r = (result?.response ?? {}) as Record<string, unknown>;
+  if (typeof r.description === "string") {
+    const det = Array.isArray(r.details) ? (r.details[0] as Record<string, unknown>) : null;
+    const campo = det ? Object.entries(det).find(([k]) => k !== "data") : null;
+    const data = (det?.data ?? {}) as Record<string, unknown>;
+    const cliente = data.client_name ?? data.name ?? data.code ?? "";
+    const campoTxt = campo ? ` (${campo[0]}: ${Array.isArray(campo[1]) ? (campo[1] as string[]).join(", ") : campo[1]})` : "";
+    const cliTxt = cliente ? ` — cliente ${cliente}` : "";
+    return `Drivin rechazó el plan: ${r.description}${campoTxt}${cliTxt}`;
+  }
+  return `Drivin ${status}: ${JSON.stringify(result).slice(0, 300)}`;
+}
+
 function normKey(s: unknown): string {
   return String(s ?? "")
     .normalize("NFD")
@@ -97,7 +113,7 @@ export async function buildScenarioPayload(opts: {
   // Índice de contacto TAT por código (NIT-sucursal): referencia y contacto.
   const tatInfoPorCodigo = new Map<
     string,
-    { referencia: string | null; telefono: string | null; correo: string | null; departamento: string | null; vendedor: string | null }
+    { referencia: string | null; telefono: string | null; correo: string | null; ciudad: string | null; departamento: string | null; vendedor: string | null }
   >();
   for (const c of clientesTat) {
     if (!c.nit) continue;
@@ -107,6 +123,7 @@ export async function buildScenarioPayload(opts: {
       referencia: c.referencia ?? null,
       telefono: c.telefono ?? c.celular ?? null,
       correo: c.correo ?? null,
+      ciudad: c.ciudad ?? null,
       departamento: c.departamento ?? null,
       vendedor: c.vendedor ?? null,
     });
@@ -274,8 +291,6 @@ export async function buildScenarioPayload(opts: {
       geoByCliente.get(normKey(clienteGS)) ??
       geoByCliente.get(normKey(cliente)) ??
       null;
-    // Comuna/barrio para Drivin (campo `city`). Nunca usa el nombre del cliente.
-    const city = asignado?.ciudad || geo?.ciudad || null;
     // Vendedor por defecto del cliente (si la remisión no trae vendedor propio):
     // primero el del concatenado, luego GS, luego el maestro TAT por código.
     const vendedorCliente =
@@ -345,6 +360,10 @@ export async function buildScenarioPayload(opts: {
     const telefono = asignado?.telefono ?? geo?.telefono ?? tatInfo?.telefono ?? null;
     const correo = asignado?.correo ?? geo?.correo ?? tatInfo?.correo ?? null;
     const departamento = asignado?.departamento ?? geo?.departamento ?? tatInfo?.departamento ?? null;
+    // Drivin EXIGE `city` (comuna/ciudad) no vacío. Prioriza barrio/comuna, luego
+    // ciudad/departamento; nunca el nombre del cliente. Fallback final para no
+    // fallar el plan si el cliente no tiene datos geográficos.
+    const city = asignado?.ciudad || geo?.ciudad || tatInfo?.ciudad || departamento || "Barranquilla";
     // Solo se fija el vehículo de la parada si TODAS sus órdenes van al mismo
     // (si hay conflicto se deja a nivel de orden para no forzar el equivocado).
     const vehiculoCliente = vehiculosCliente.size === 1 ? [...vehiculosCliente][0] : undefined;
@@ -358,7 +377,7 @@ export async function buildScenarioPayload(opts: {
       client_code: codigoFinal,
       address: titleCase(asignado?.direccion ?? direccionTat ?? drivinMatch?.address1 ?? geo?.direccion ?? destino),
       reference: referencia ? titleCase(referencia) : undefined,
-      city: city ? titleCase(city) : undefined,
+      city: titleCase(city),
       state: departamento ? titleCase(departamento) : undefined,
       country: asignado?.pais ?? geo?.pais ?? "Colombia",
       lat: latStr ? parseFloat(latStr) : null,
@@ -483,6 +502,7 @@ router.post("/", requireAuth, async (req, res, next) => {
       method: "POST",
       headers: DRIVIN_HEADERS(),
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000),
     });
 
     const result = (await resp.json().catch(() => ({}))) as Record<
@@ -490,10 +510,7 @@ router.post("/", requireAuth, async (req, res, next) => {
       unknown
     >;
     if (!resp.ok) {
-      throw new HttpError(
-        502,
-        `Drivin ${resp.status}: ${JSON.stringify(result).slice(0, 300)}`
-      );
+      throw new HttpError(resp.status >= 500 ? 502 : 400, drivinErrorMessage(resp.status, result));
     }
 
     // Marca solo las órdenes enviadas (respetando filtro de placas si aplica)
@@ -618,14 +635,12 @@ router.post("/agregar", requireAuth, async (req, res, next) => {
         method: "POST",
         headers: DRIVIN_HEADERS(),
         body: JSON.stringify({ clients: clientesFiltrados }),
+        signal: AbortSignal.timeout(30000),
       }
     );
     const addResult = (await addResp.json().catch(() => ({}))) as Record<string, unknown>;
     if (!addResp.ok) {
-      throw new HttpError(
-        502,
-        `Drivin ${addResp.status}: ${JSON.stringify(addResult).slice(0, 300)}`
-      );
+      throw new HttpError(addResp.status >= 500 ? 502 : 400, drivinErrorMessage(addResp.status, addResult));
     }
 
     // 6. Marcar las órdenes enviadas en la BD.
