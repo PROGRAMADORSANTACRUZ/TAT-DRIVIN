@@ -488,8 +488,12 @@ export default function AsignacionVehiculosPage() {
           fleetName: planFlota || undefined,
         });
         meta = result._meta as PlanMeta;
+        const conf = meta.conflictos ?? [];
+        const aviso = conf.length > 0
+          ? ` ⚠ ${conf.length} dirección(es) con órdenes en varios vehículos: ${conf.slice(0, 3).map((c) => `${c.cliente} (${c.vehiculos.join("/")})`).join("; ")}. Revisa la asignación.`
+          : "";
         setMessage(
-          `Plan creado en Drivin: ${meta.vehiculos} vehículos · ${meta.direcciones} paradas · ${meta.ordenes} órdenes.`
+          `Plan creado en Drivin: ${meta.vehiculos} vehículos · ${meta.direcciones} paradas · ${meta.ordenes} órdenes.${aviso}`
         );
       }
       setPlanMeta(meta);

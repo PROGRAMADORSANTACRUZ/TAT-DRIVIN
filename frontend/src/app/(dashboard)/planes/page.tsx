@@ -231,7 +231,11 @@ export default function DiagramaPage() {
           placas: checkedConPendientes.length > 0 ? checkedConPendientes : undefined,
         });
         meta = result._meta as PlanMeta;
-        setMessage(`Plan creado en Drivin: ${meta.vehiculos} vehículos · ${meta.ordenes} órdenes.`);
+        const conf = meta.conflictos ?? [];
+        const aviso = conf.length > 0
+          ? ` ⚠ ${conf.length} dirección(es) con órdenes en varios vehículos: ${conf.slice(0, 3).map((c) => `${c.cliente} (${c.vehiculos.join("/")})`).join("; ")}. Revisa la asignación.`
+          : "";
+        setMessage(`Plan creado en Drivin: ${meta.vehiculos} vehículos · ${meta.ordenes} órdenes.${aviso}`);
       }
       setPlanMeta(meta);
       setPlanModal(false);

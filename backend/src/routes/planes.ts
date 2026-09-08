@@ -238,6 +238,9 @@ export async function buildScenarioPayload(opts: {
   }
 
   const clients = [];
+  // Direcciones cuyas órdenes quedaron repartidas en más de un vehículo (Drivin
+  // solo puede visitar la parada con uno -> el resto iría con otro conductor).
+  const conflictosVehiculo: { cliente: string; destino: string; vehiculos: string[] }[] = [];
   for (const [dirKey, { cliente, destino, pedidos }] of porDireccion) {
     // Aplica alias si el cliente tiene un nombre distinto en GS/Drivin.
     const clienteGS = CLIENTES_ALIAS[normKey(cliente)] ?? cliente;
@@ -281,6 +284,9 @@ export async function buildScenarioPayload(opts: {
       (codigoTat ? tatInfoPorCodigo.get(codigoTat)?.vendedor : null) ??
       null;
     const orders = [];
+    // Vehículos de las órdenes de esta dirección (para fijar el vehículo a nivel
+    // de dirección y evitar que Drivin reasigne la parada a otro conductor).
+    const vehiculosCliente = new Set<string>();
     for (const [numeroOrden, lineas] of pedidos) {
       // Agrupa por producto: suma kg y valor (para el recaudo por ítem).
       const productMap = new Map<string, { kg: number; valor: number }>();
@@ -324,6 +330,7 @@ export async function buildScenarioPayload(opts: {
         vehicle_code: lineas[0].asignadoVehiculo,
         items,
       });
+      if (lineas[0].asignadoVehiculo) vehiculosCliente.add(lineas[0].asignadoVehiculo);
     }
     // Info final a Drivin: primero la del cliente al que se concatenó; si no, la propia.
     const nombreFinal = asignado?.nombre ?? clienteGS;
@@ -338,6 +345,12 @@ export async function buildScenarioPayload(opts: {
     const telefono = asignado?.telefono ?? geo?.telefono ?? tatInfo?.telefono ?? null;
     const correo = asignado?.correo ?? geo?.correo ?? tatInfo?.correo ?? null;
     const departamento = asignado?.departamento ?? geo?.departamento ?? tatInfo?.departamento ?? null;
+    // Solo se fija el vehículo de la parada si TODAS sus órdenes van al mismo
+    // (si hay conflicto se deja a nivel de orden para no forzar el equivocado).
+    const vehiculoCliente = vehiculosCliente.size === 1 ? [...vehiculosCliente][0] : undefined;
+    if (vehiculosCliente.size > 1) {
+      conflictosVehiculo.push({ cliente, destino, vehiculos: [...vehiculosCliente] });
+    }
     clients.push({
       code: codigoFinal,
       name: titleCase(nombreFinal),
@@ -350,6 +363,7 @@ export async function buildScenarioPayload(opts: {
       country: asignado?.pais ?? geo?.pais ?? "Colombia",
       lat: latStr ? parseFloat(latStr) : null,
       lng: lngStr ? parseFloat(lngStr) : null,
+      vehicle_code: vehiculoCliente,
       contact_name: titleCase(nombreFinal),
       contact_phone: telefono ?? undefined,
       contact_email: correo ?? undefined,
@@ -369,6 +383,7 @@ export async function buildScenarioPayload(opts: {
     clients,
     vehicles: vehiculos,
     _ordenesCount: ordenes.length,
+    _conflictosVehiculo: conflictosVehiculo,
   };
 }
 
@@ -500,6 +515,7 @@ router.post("/", requireAuth, async (req, res, next) => {
         vehiculos: payload.vehicles.length,
         direcciones: payload.clients.length,
         ordenes: (payload as { _ordenesCount?: number })._ordenesCount ?? 0,
+        conflictos: (payload as { _conflictosVehiculo?: unknown[] })._conflictosVehiculo ?? [],
       },
     });
   } catch (err) {

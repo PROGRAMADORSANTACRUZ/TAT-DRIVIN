@@ -563,6 +563,7 @@ export interface PlanMeta {
   estado?: string;
   added?: number;
   skipped?: number;
+  conflictos?: { cliente: string; destino: string; vehiculos: string[] }[];
 }
 
 export function getPlanes(date: string): Promise<Plan[]> {
