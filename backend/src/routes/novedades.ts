@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { HttpError } from "../middleware/errorHandler";
 import { requireAuth, requirePermiso } from "../middleware/auth";
+import { enviarOrdenesANivel } from "../lib/nivel";
 
 const router = Router();
 
@@ -94,51 +95,7 @@ router.post("/enviar-nivel", requireAuth, requirePermiso("/nivel-de-servicio"), 
     const parsed = enviarNivelSchema.safeParse(req.body);
     if (!parsed.success) throw new HttpError(400, parsed.error.issues[0].message);
     const numeros = [...new Set(parsed.data.numerosOrden)];
-
-    // Remisiones asignadas a un vehículo (una fila por producto → se agrupan).
-    const ordenes = await prisma.orden.findMany({
-      where: { numeroOrden: { in: numeros }, asignadoVehiculo: { not: null } },
-    });
-    const porOrden = new Map<string, (typeof ordenes)[number]>();
-    for (const o of ordenes) if (!porOrden.has(o.numeroOrden)) porOrden.set(o.numeroOrden, o);
-
-    // Ya existentes en el Nivel (por numeroOrden) para no duplicar.
-    const yaExisten = await prisma.novedad.findMany({
-      where: { numeroOrden: { in: numeros } },
-      select: { numeroOrden: true },
-    });
-    const existentes = new Set(yaExisten.map((n) => n.numeroOrden));
-
-    const aCrear = [...porOrden.values()].filter((o) => !existentes.has(o.numeroOrden));
-    let creadas = 0;
-    if (aCrear.length > 0) {
-      await prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(1002)`;
-        const last = await tx.novedad.findFirst({
-          orderBy: { consecutivo: "desc" },
-          select: { consecutivo: true },
-        });
-        let cons = last?.consecutivo ?? 0;
-        for (const o of aCrear) {
-          cons += 1;
-          // La orden guarda fecha en DD/MM/YYYY; el Nivel filtra por ISO.
-          const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(o.fecha ?? "");
-          const fechaISO = m ? `${m[3]}-${m[2]}-${m[1]}` : new Date().toISOString().slice(0, 10);
-          await tx.novedad.create({
-            data: {
-              consecutivo: cons,
-              fecha: fechaISO,
-              estadoEntrega: "Sin Novedad",
-              planillaId: null, // sin DL hasta que pase por Planificación
-              placa: o.asignadoVehiculo,
-              cliente: o.cliente,
-              numeroOrden: o.numeroOrden,
-            },
-          });
-          creadas += 1;
-        }
-      });
-    }
+    const creadas = await enviarOrdenesANivel(numeros);
     res.status(201).json({ creadas, omitidas: numeros.length - creadas });
   } catch (err) {
     next(err);

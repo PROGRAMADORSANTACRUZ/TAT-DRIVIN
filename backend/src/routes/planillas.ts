@@ -180,6 +180,36 @@ router.patch("/:id", requireAuth, requirePermiso("/planificacion-dl"), async (re
     }
 
     const planilla = await prisma.planillaDespacho.update({ where: { id }, data });
+
+    // Refleja los cambios del DL en las novedades del Nivel de Servicio vinculadas.
+    const novData: Record<string, unknown> = {};
+    if (d.placa !== undefined) novData.placa = planilla.placa;
+    if (d.conductor !== undefined) novData.conductor = planilla.conductor;
+    if (d.auxiliarRuta !== undefined) novData.auxiliarRuta = planilla.auxiliarRuta;
+    if (Object.keys(novData).length > 0) {
+      await prisma.novedad.updateMany({ where: { planillaId: id }, data: novData });
+    }
+    // Si cambian los items: vincula los nuevos y desvincula (vuelven "sin DL") los que salieron.
+    if (d.items !== undefined) {
+      const nums = d.items.map((i) => i.numeroOrden).filter((n): n is string => Boolean(n));
+      if (nums.length > 0) {
+        await prisma.novedad.updateMany({
+          where: { numeroOrden: { in: nums }, planillaId: null },
+          data: {
+            planillaId: id,
+            placa: planilla.placa,
+            conductor: planilla.conductor,
+            auxiliarRuta: planilla.auxiliarRuta,
+            fecha: planilla.fecha,
+          },
+        });
+      }
+      await prisma.novedad.updateMany({
+        where: { planillaId: id, numeroOrden: { notIn: nums.length > 0 ? nums : ["\u0000"] } },
+        data: { planillaId: null },
+      });
+    }
+
     res.json({
       ...planilla,
       clientes: planilla.clientes ? (JSON.parse(planilla.clientes) as string[]) : [],

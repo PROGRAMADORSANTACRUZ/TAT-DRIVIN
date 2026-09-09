@@ -8,6 +8,7 @@ import {
   buildAddressIndex,
   matchDrivinAddress,
 } from "../lib/drivinAddresses";
+import { enviarOrdenesANivel } from "../lib/nivel";
 
 const router = Router();
 
@@ -558,6 +559,12 @@ router.post("/", requireAuth, async (req, res, next) => {
     // Cuenta esta réplica (envío) por cada vehículo del plan.
     await incrementarReplicas((payload.vehicles as { code?: string }[]).map((v) => v.code ?? ""));
 
+    // Envía también al Nivel de Servicio (sin DL). Se le asignará el DL cuando
+    // la remisión pase por Planificación DL.
+    await enviarOrdenesANivel(
+      (payload.clients as { orders: { code: string }[] }[]).flatMap((c) => c.orders.map((o) => o.code))
+    );
+
     res.status(201).json({
       ...result,
       _meta: {
@@ -691,6 +698,11 @@ router.post("/agregar", requireAuth, async (req, res, next) => {
     // Cuenta la réplica por cada vehículo con órdenes nuevas agregadas.
     await incrementarReplicas(
       clientesFiltrados.flatMap((c) => (c.orders as { vehicle_code?: string }[]).map((o) => o.vehicle_code ?? ""))
+    );
+
+    // Envía también al Nivel de Servicio (sin DL) todas las remisiones del plan.
+    await enviarOrdenesANivel(
+      (payload.clients as { orders: { code: string }[] }[]).flatMap((c) => c.orders.map((o) => o.code))
     );
 
     const response = (addResult.response ?? {}) as Record<string, unknown>;

@@ -262,7 +262,7 @@ export default function DiagramaPage() {
         const aviso = conf.length > 0
           ? ` ⚠ ${conf.length} dirección(es) con órdenes en varios vehículos: ${conf.slice(0, 3).map((c) => `${c.cliente} (${c.vehiculos.join("/")})`).join("; ")}. Revisa la asignación.`
           : "";
-        setMessage(`${reenviarMode ? "Réplica enviada" : "Plan creado"} en Drivin: ${meta.vehiculos} vehículos · ${meta.ordenes} órdenes.${aviso}`);
+        setMessage(`${reenviarMode ? "Réplica enviada" : "Plan creado"} en Drivin: ${meta.vehiculos} vehículos · ${meta.ordenes} órdenes · también enviado a Nivel de Servicio.${aviso}`);
       }
       setPlanMeta(meta);
       setPlanModal(false);
