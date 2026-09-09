@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   agregarAPlan,
+  asignarOrdenes,
   crearPlan,
   getFlotas,
   getOrdenes,
@@ -74,6 +75,9 @@ export default function DiagramaPage() {
   // Reenvío (réplica) de vehículos ya enviados a Drivin.
   const [confirmReenvio, setConfirmReenvio] = useState(false);
   const [reenviarMode, setReenviarMode] = useState(false);
+  // Edición de órdenes por vehículo (mover/quitar remisiones) en el diagrama.
+  const [editVeh, setEditVeh] = useState<string | null>(null);
+  const [moviendo, setMoviendo] = useState(false);
 
   const [showPlanes, setShowPlanes] = useState(false);
   const [planes, setPlanes] = useState<Plan[]>([]);
@@ -150,6 +154,12 @@ export default function DiagramaPage() {
     );
   }, [grupos, buscar]);
 
+  // Placas activas (destinos posibles al mover una remisión a otro vehículo).
+  const placasActivas = useMemo(
+    () => vehiculos.filter((v) => v.estado === "Activo").map((v) => v.placa),
+    [vehiculos]
+  );
+
   // Vehículos seleccionados con órdenes (permite reenviar aunque ya estén enviadas).
   const checkedVehiculos = useMemo(
     () => grupos.filter((g) => checked.has(g.vehiculo.placa.toUpperCase()) && g.ordenes.length > 0),
@@ -182,6 +192,22 @@ export default function DiagramaPage() {
 
   function selectAll() { setChecked(new Set(grupos.map((g) => g.vehiculo.placa.toUpperCase()))); }
   function deselectAll() { setChecked(new Set()); }
+
+  // Mueve todas las líneas de una remisión a otro vehículo (o la quita si placa=null).
+  async function moverRemision(numeroOrden: string, ordsVehiculo: Orden[], placa: string | null) {
+    const ids = ordsVehiculo.filter((o) => o.numeroOrden === numeroOrden).map((o) => o.id);
+    if (ids.length === 0) return;
+    setMoviendo(true);
+    setError(null);
+    try {
+      await asignarOrdenes(ids, placa);
+      await load(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo mover la remisión");
+    } finally {
+      setMoviendo(false);
+    }
+  }
 
   async function abrirPlanes() {
     setShowPlanes(true);
@@ -341,6 +367,7 @@ export default function DiagramaPage() {
               const isChecked = checked.has(v.placa.toUpperCase());
               const rem = consolidarRemisiones(ords);
               const remEnviadas = rem.filter((r) => r.enviado).length;
+              const isEditing = editVeh === v.id;
               return (
                 <div key={v.id} className={`flex flex-col overflow-hidden rounded-2xl border shadow-sm transition-shadow hover:shadow-md ${isChecked ? "border-[#2f8f4e] ring-1 ring-[#2f8f4e]/30" : "border-[#e1e9dd]"}`}>
                   <div className="flex items-center gap-3 bg-[#14352a] px-4 py-3">
@@ -359,6 +386,11 @@ export default function DiagramaPage() {
                       <p className="text-xs text-[#a8c9b0]">Cap. {v.capacidad ?? "—"} kg</p>
                       <p className="text-xs text-[#a8c9b0]">{rem.length} remisiones</p>
                     </div>
+                    <button onClick={() => setEditVeh(isEditing ? null : v.id)}
+                      title={isEditing ? "Terminar edición" : "Editar órdenes del vehículo"}
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors ${isEditing ? "border-yellow-400 bg-yellow-300 text-[#14352a]" : "border-white/30 text-white hover:bg-white/10"}`}>
+                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                    </button>
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       {(() => {
                         const reps = replicas[v.placa.toUpperCase()] ?? replicas[v.placa] ?? 0;
@@ -391,7 +423,7 @@ export default function DiagramaPage() {
                           <th className="px-4 py-1.5 font-semibold">No. Orden</th>
                           <th className="px-4 py-1.5 font-semibold">Código</th>
                           <th className="px-4 py-1.5 text-right font-semibold">kg</th>
-                          <th className="px-4 py-1.5"></th>
+                          <th className="px-4 py-1.5 text-right font-semibold">{isEditing ? "Mover" : ""}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#f0f2ee]">
@@ -401,9 +433,34 @@ export default function DiagramaPage() {
                             <td className="max-w-[140px] truncate px-4 py-1.5 text-[#45505e]">{tc(o.cliente)} — {tc(o.destino)}</td>
                             <td className="px-4 py-1.5 text-right tabular-nums text-[#14352a]">{o.cantidadKg.toFixed(0)}</td>
                             <td className="px-4 py-1.5">
-                              {o.enviado
-                                ? <span className="text-[#2f8f4e]">✓</span>
-                                : <span className="inline-flex h-2 w-2 rounded-full bg-[#b5941e]" title="Pendiente de envío" />}
+                              {isEditing ? (
+                                <div className="flex items-center justify-end gap-1">
+                                  <select
+                                    value=""
+                                    disabled={moviendo}
+                                    onChange={(e) => { if (e.target.value) moverRemision(o.numeroOrden, ords, e.target.value); }}
+                                    className="rounded border border-[#dfe4e0] bg-white px-1.5 py-0.5 text-[11px] text-[#14352a] outline-none focus:border-[#2f8f4e] disabled:opacity-50"
+                                    title="Mover a otro vehículo"
+                                  >
+                                    <option value="">Mover a…</option>
+                                    {placasActivas.filter((p) => p.toUpperCase() !== v.placa.toUpperCase()).map((p) => (
+                                      <option key={p} value={p}>{p}</option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    onClick={() => moverRemision(o.numeroOrden, ords, null)}
+                                    disabled={moviendo}
+                                    title="Quitar del vehículo"
+                                    className="flex h-5 w-5 items-center justify-center rounded border border-[#f0c4c1] bg-[#fbeceb] text-[#b3261e] hover:bg-[#f7dcd9] disabled:opacity-40"
+                                  >
+                                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                  </button>
+                                </div>
+                              ) : o.enviado ? (
+                                <span className="text-[#2f8f4e]">✓</span>
+                              ) : (
+                                <span className="inline-flex h-2 w-2 rounded-full bg-[#b5941e]" title="Pendiente de envío" />
+                              )}
                             </td>
                           </tr>
                         ))}
