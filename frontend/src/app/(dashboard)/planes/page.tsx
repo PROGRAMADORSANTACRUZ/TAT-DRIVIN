@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { tc } from "@/lib/utils";
 import { SkeletonVehicleCard } from "@/components/Loading";
+import QuitarRemisionModal from "@/components/QuitarRemisionModal";
 
 const fmtKg = (n: number) => n.toLocaleString("es-CO", { maximumFractionDigits: 0 });
 
@@ -78,6 +79,7 @@ export default function DiagramaPage() {
   // Edición de órdenes por vehículo (mover/quitar remisiones) en el diagrama.
   const [editVeh, setEditVeh] = useState<string | null>(null);
   const [moviendo, setMoviendo] = useState(false);
+  const [editRemision, setEditRemision] = useState<{ numeroOrden: string; kg: number; ords: Orden[]; placa: string } | null>(null);
 
   const [showPlanes, setShowPlanes] = useState(false);
   const [planes, setPlanes] = useState<Plan[]>([]);
@@ -154,11 +156,12 @@ export default function DiagramaPage() {
     );
   }, [grupos, buscar]);
 
-  // Placas activas (destinos posibles al mover una remisión a otro vehículo).
-  const placasActivas = useMemo(
-    () => vehiculos.filter((v) => v.estado === "Activo").map((v) => v.placa),
-    [vehiculos]
-  );
+  // kg cargados por placa (para mostrar capacidad en el modal de mover remisión).
+  const cargaPorPlaca = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const g of grupos) m.set(g.vehiculo.placa.toUpperCase(), g.totalKg);
+    return m;
+  }, [grupos]);
 
   // Vehículos seleccionados con órdenes (permite reenviar aunque ya estén enviadas).
   const checkedVehiculos = useMemo(
@@ -434,26 +437,15 @@ export default function DiagramaPage() {
                             <td className="px-4 py-1.5 text-right tabular-nums text-[#14352a]">{o.cantidadKg.toFixed(0)}</td>
                             <td className="px-4 py-1.5">
                               {isEditing ? (
-                                <div className="flex items-center justify-end gap-1">
-                                  <select
-                                    value=""
-                                    disabled={moviendo}
-                                    onChange={(e) => { if (e.target.value) moverRemision(o.numeroOrden, ords, e.target.value); }}
-                                    className="rounded border border-[#dfe4e0] bg-white px-1.5 py-0.5 text-[11px] text-[#14352a] outline-none focus:border-[#2f8f4e] disabled:opacity-50"
-                                    title="Mover a otro vehículo"
-                                  >
-                                    <option value="">Mover a…</option>
-                                    {placasActivas.filter((p) => p.toUpperCase() !== v.placa.toUpperCase()).map((p) => (
-                                      <option key={p} value={p}>{p}</option>
-                                    ))}
-                                  </select>
+                                <div className="flex justify-end">
                                   <button
-                                    onClick={() => moverRemision(o.numeroOrden, ords, null)}
+                                    onClick={() => setEditRemision({ numeroOrden: o.numeroOrden, kg: o.cantidadKg, ords, placa: v.placa })}
                                     disabled={moviendo}
-                                    title="Quitar del vehículo"
-                                    className="flex h-5 w-5 items-center justify-center rounded border border-[#f0c4c1] bg-[#fbeceb] text-[#b3261e] hover:bg-[#f7dcd9] disabled:opacity-40"
+                                    title="Editar / mover remisión"
+                                    className="inline-flex h-6 items-center gap-1 rounded-lg border border-[#dfe4e0] bg-white px-2 text-[11px] font-medium text-[#45505e] hover:bg-[#f4f6f3] disabled:opacity-40"
                                   >
-                                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                                    Editar
                                   </button>
                                 </div>
                               ) : o.enviado ? (
@@ -479,6 +471,25 @@ export default function DiagramaPage() {
         <span className="flex items-center gap-1.5"><span className="inline-flex h-2 w-2 rounded-full bg-[#b5941e]" /> Pendiente de envío</span>
         <span className="flex items-center gap-1.5"><span className="block h-2 w-6 rounded-full bg-[#b3261e]" /> Capacidad &gt;95%</span>
       </div>
+
+      {/* Modal: editar/mover remisión (mismo diseño que Planificación DL) */}
+      {editRemision && (
+        <QuitarRemisionModal
+          numeroOrden={editRemision.numeroOrden}
+          remisionKg={editRemision.kg}
+          vehiculoActual={editRemision.placa}
+          vehiculos={vehiculos.filter((v) => v.estado === "Activo")}
+          cargaPorPlaca={cargaPorPlaca}
+          loading={moviendo}
+          devolver={{
+            titulo: "Devolver a carga de órdenes",
+            descripcion: "La remisión queda disponible para asignarse de nuevo.",
+            onClick: () => { const e = editRemision; setEditRemision(null); moverRemision(e.numeroOrden, e.ords, null); },
+          }}
+          onPasar={(placa) => { const e = editRemision; setEditRemision(null); moverRemision(e.numeroOrden, e.ords, placa); }}
+          onClose={() => setEditRemision(null)}
+        />
+      )}
 
       {/* Modal: confirmar reenvío (réplica) a Drivin */}
       {confirmReenvio && (
