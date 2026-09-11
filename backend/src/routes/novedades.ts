@@ -16,6 +16,7 @@ const novedadSchema = z.object({
   novedad: z.string().trim().optional().nullable(),
   responsabilidad: z.string().trim().optional().nullable(),
   noLlego: z.string().optional().nullable(),
+  productos: z.string().optional().nullable(),
   planillaId: z.string().trim().optional().nullable(),
   placa: z.string().trim().optional().nullable(),
   conductor: z.string().trim().optional().nullable(),
@@ -65,6 +66,7 @@ router.post("/", requireAuth, requirePermiso("/nivel-de-servicio"), async (req, 
           novedad: d.novedad ?? null,
           responsabilidad: d.responsabilidad ?? null,
           noLlego: d.noLlego ?? null,
+          productos: d.productos ?? null,
           planillaId: d.planillaId ?? null,
           placa: d.placa ?? null,
           conductor: d.conductor ?? null,
@@ -120,6 +122,7 @@ router.patch("/:id", requireAuth, requirePermiso("/nivel-de-servicio"), async (r
     if (d.novedad !== undefined) data.novedad = d.novedad ?? null;
     if (d.responsabilidad !== undefined) data.responsabilidad = d.responsabilidad ?? null;
     if (d.noLlego !== undefined) data.noLlego = d.noLlego ?? null;
+    if (d.productos !== undefined) data.productos = d.productos ?? null;
     if (d.planillaId !== undefined) data.planillaId = d.planillaId ?? null;
     if (d.placa !== undefined) data.placa = d.placa ?? null;
     if (d.conductor !== undefined) data.conductor = d.conductor ?? null;

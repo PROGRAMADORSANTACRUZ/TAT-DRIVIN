@@ -831,6 +831,7 @@ export interface Novedad {
   novedad: string | null;
   responsabilidad: string | null;
   noLlego: string | null;
+  productos: string | null;
   planillaId: string | null;
   placa: string | null;
   conductor: string | null;
@@ -853,6 +854,7 @@ export type NovedadInput = {
   novedad?: string | null;
   responsabilidad?: string | null;
   noLlego?: string | null;
+  productos?: string | null;
   planillaId?: string | null;
   placa?: string | null;
   conductor?: string | null;

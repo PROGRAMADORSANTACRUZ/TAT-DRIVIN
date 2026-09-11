@@ -50,6 +50,12 @@ const RESPONSABILIDADES_LIST = [
 const fmtKg = (n: number) =>
   n.toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// Normaliza el número de remisión para comparar (Drivin/BD a veces guardan espacios).
+const normOrden = (s: string | null | undefined) => String(s ?? "").replace(/\s+/g, "").toUpperCase();
+
+// Línea de producto que se muestra en el modal de detalle.
+type DetalleProducto = { producto: string; kg: number; reasonName: string | null; reasonCode: string | null };
+
 // TAT usa facturas electrónicas (FE / 1FE); Agropecuaria usa B / P. Sirve para
 // separar el nivel de servicio aunque la orden ya se haya borrado.
 function esTATNumero(num: string | null | undefined): boolean {
@@ -118,7 +124,7 @@ export default function NivelServicioPage() {
   const [resolviendo, setResolviendo] = useState<{ key: string; planillaId: string; item: PlanillaItem; planilla: Planilla; novedad: Novedad | null } | null>(null);
 
   // Modal de detalle por producto (novedades que llegan de Drivin por producto).
-  const [detalles, setDetalles] = useState<{ item: PlanillaItem; planilla: Planilla; productos: Orden[] } | null>(null);
+  const [detalles, setDetalles] = useState<{ item: PlanillaItem; planilla: Planilla; productos: DetalleProducto[] } | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const drivinRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -305,6 +311,17 @@ export default function NivelServicioPage() {
     return counts;
   }, [allRows, drafts]);
 
+  // Productos de una remisión desde las órdenes vivas (match normalizado + placa).
+  function productosDeOrdenes(item: PlanillaItem, planilla: Planilla): DetalleProducto[] {
+    const target = normOrden(item.numeroOrden);
+    let prods = ordenes.filter(
+      (o) => normOrden(o.numeroOrden) === target &&
+             o.asignadoVehiculo?.toUpperCase() === planilla.placa.toUpperCase()
+    );
+    if (prods.length === 0) prods = ordenes.filter((o) => normOrden(o.numeroOrden) === target);
+    return prods.map((o) => ({ producto: o.producto, kg: o.cantidadKg, reasonName: o.reasonName ?? null, reasonCode: o.reasonCode ?? null }));
+  }
+
   // Guardar un campo al API (create o update)
   async function saveField(planillaId: string, item: PlanillaItem, planilla: Planilla, patch: Partial<RowDraft>) {
     const key = `${planillaId}|${item.numeroOrden}`;
@@ -312,6 +329,8 @@ export default function NivelServicioPage() {
     try {
       const cur = drafts.get(key) ?? { estadoEntrega: "Sin Novedad" as NivelEstado, novedad: "", responsabilidad: "", descripcion: "" };
       const merged = { ...cur, ...patch };
+      // Snapshot de productos desde las órdenes vivas (persiste el detalle en la novedad).
+      const prodsLive = productosDeOrdenes(item, planilla);
       const payload = {
         estadoEntrega: merged.estadoEntrega,
         novedad: merged.novedad || null,
@@ -324,6 +343,7 @@ export default function NivelServicioPage() {
         conductor: planilla.conductor,
         auxiliarRuta: planilla.auxiliarRuta,
         fecha: planilla.fecha || new Date(planilla.createdAt).toISOString().slice(0, 10),
+        ...(prodsLive.length ? { productos: JSON.stringify(prodsLive) } : {}),
       };
       const existing = novedadMap.get(key);
       if (existing) {
@@ -347,16 +367,21 @@ export default function NivelServicioPage() {
     if (persist) saveField(planillaId, item, planilla, patch);
   }
 
-  function openDetallesModal(item: PlanillaItem, planilla: Planilla) {
-    // Empareja por remisión + placa; si no hay coincidencia, por remisión sola.
-    let prods = ordenes.filter(
-      (o) => o.numeroOrden === item.numeroOrden &&
-             o.asignadoVehiculo?.toUpperCase() === planilla.placa.toUpperCase()
-    );
-    if (prods.length === 0) {
-      prods = ordenes.filter((o) => o.numeroOrden === item.numeroOrden);
+  function openDetallesModal(planillaId: string, item: PlanillaItem, planilla: Planilla) {
+    // 1) Detalle persistido en la novedad (sobrevive al borrado de órdenes).
+    const nov = novedadMap.get(`${planillaId}|${item.numeroOrden}`) ?? novedadMap.get(`|${item.numeroOrden}`) ?? null;
+    let productos: DetalleProducto[] = [];
+    if (nov?.productos) {
+      try {
+        const arr = JSON.parse(nov.productos);
+        if (Array.isArray(arr)) productos = arr as DetalleProducto[];
+      } catch { productos = []; }
     }
-    setDetalles({ item, planilla, productos: prods });
+    // 2) Fallback a las órdenes vivas (match normalizado por remisión + placa).
+    if (productos.length === 0) {
+      productos = productosDeOrdenes(item, planilla);
+    }
+    setDetalles({ item, planilla, productos });
   }
 
   function openReportarModal(planillaId: string, item: PlanillaItem, planilla: Planilla) {
@@ -647,7 +672,7 @@ export default function NivelServicioPage() {
                             </button>
                           {/* Ver detalles — discriminado de productos con su novedad de Drivin */}
                           <button
-                            onClick={() => openDetallesModal(item, planilla)}
+                            onClick={() => openDetallesModal(planillaId, item, planilla)}
                             title="Ver detalle de productos y novedades"
                             className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#dfe4e0] bg-white text-[#45505e] hover:bg-[#f4f6f3]"
                           >
@@ -803,10 +828,10 @@ export default function NivelServicioPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#f0f2ee]">
-                    {detalles.productos.map((o) => (
-                      <tr key={o.id || `${o.numeroOrden}-${o.producto}`}>
+                    {detalles.productos.map((o, i) => (
+                      <tr key={`${o.producto}-${i}`}>
                         <td className="px-2 py-2.5 text-[#14352a]">{o.producto}</td>
-                        <td className="px-2 py-2.5 text-right tabular-nums font-medium text-[#14352a]">{fmtKg(o.cantidadKg)}</td>
+                        <td className="px-2 py-2.5 text-right tabular-nums font-medium text-[#14352a]">{fmtKg(o.kg)}</td>
                         <td className="px-2 py-2.5">
                           {o.reasonName ? (
                             <span className="inline-flex items-center gap-1.5 rounded-full bg-[#fbeceb] px-2.5 py-1 text-xs font-medium text-[#b3261e]">

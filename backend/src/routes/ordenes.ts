@@ -1412,13 +1412,22 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
     }
 
     // Mapa numeroOrden(normalizado) -> órdenes en BD (para actualizar por id).
-    const ordenesActivas = await prisma.orden.findMany({ select: { id: true, numeroOrden: true, estado: true } });
+    const ordenesActivas = await prisma.orden.findMany({
+      select: { id: true, numeroOrden: true, estado: true, producto: true, cantidadKg: true, reasonName: true, reasonCode: true },
+    });
     const ordenPorCode = new Map<string, { id: string; estado: string }[]>();
+    // Snapshot de líneas de producto por remisión (para persistir en la novedad).
+    const productosPorCode = new Map<string, string>();
+    const lineasPorCode = new Map<string, { producto: string; kg: number; reasonName: string | null; reasonCode: string | null }[]>();
     for (const o of ordenesActivas) {
       const k = norm(o.numeroOrden);
       const arr = ordenPorCode.get(k);
       if (arr) arr.push(o); else ordenPorCode.set(k, [o]);
+      const lins = lineasPorCode.get(k) ?? [];
+      lins.push({ producto: o.producto, kg: o.cantidadKg, reasonName: o.reasonName ?? null, reasonCode: o.reasonCode ?? null });
+      lineasPorCode.set(k, lins);
     }
+    for (const [k, arr] of lineasPorCode) productosPorCode.set(k, JSON.stringify(arr));
 
     // Mapa numeroOrden(normalizado) -> planilla activa (para crear novedades).
     const planillasActivas = await prisma.planillaDespacho.findMany({
@@ -1449,6 +1458,7 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
       consecutivo: number; fecha: string; estadoEntrega: string; novedad: string | null;
       planillaId: string | null; placa: string | null; conductor: string | null;
       auxiliarRuta: string | null; cliente: string | null; numeroOrden: string;
+      productos: string | null;
     }[] = [];
 
     let actualizados = 0;
@@ -1493,13 +1503,32 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
 
       // Nivel de servicio: refleja Rechazado / Parcial Con Novedad desde Drivin.
       const existente = novedadPorOrden.get(code);
+      // Snapshot de productos de la remisión con el motivo del POD aplicado.
+      const lineasCode = lineasPorCode.get(code) ?? [];
+      const productosJson = lineasCode.length
+        ? JSON.stringify(lineasCode.map((l) => ({
+            producto: l.producto,
+            kg: l.kg,
+            reasonName: a.reason ?? l.reasonName ?? null,
+            reasonCode: a.reason_code ?? l.reasonCode ?? null,
+          })))
+        : null;
+      // Backfill: si la novedad existe pero no tiene el detalle de productos, lo persiste.
+      if (existente && productosJson && !existente.productos) {
+        await prisma.novedad.update({ where: { id: existente.id }, data: { productos: productosJson } });
+        existente.productos = productosJson;
+      }
       if (nivelEstado) {
         if (existente) {
           // No pisa un estado ya trabajado manualmente distinto de "Sin Novedad".
           if (existente.estadoEntrega === "Sin Novedad" || existente.estadoEntrega === nivelEstado) {
             await prisma.novedad.update({
               where: { id: existente.id },
-              data: { estadoEntrega: nivelEstado, ...(motivo ? { novedad: motivo } : {}) },
+              data: {
+                estadoEntrega: nivelEstado,
+                ...(motivo ? { novedad: motivo } : {}),
+                ...(productosJson ? { productos: productosJson } : {}),
+              },
             });
             existente.estadoEntrega = nivelEstado;
             nivelActualizados++;
@@ -1518,6 +1547,7 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
             auxiliarRuta: planilla?.auxiliarRuta ?? null,
             cliente: planilla?.itemCliente ?? a.client_name ?? null,
             numeroOrden: planilla?.itemNumeroOrden ?? a.code,
+            productos: productosJson,
           });
           // Evita duplicados si el mismo code llega repetido.
           novedadPorOrden.set(code, { estadoEntrega: nivelEstado } as (typeof todasNovedades)[number]);

@@ -13,6 +13,17 @@ export async function enviarOrdenesANivel(numeros: string[]): Promise<number> {
   const porOrden = new Map<string, (typeof ordenes)[number]>();
   for (const o of ordenes) if (!porOrden.has(o.numeroOrden)) porOrden.set(o.numeroOrden, o);
 
+  // Snapshot de todas las líneas de producto por remisión (se persiste porque
+  // las órdenes se eliminan al reimportar).
+  const productosPorOrden = new Map<string, string>();
+  const lineasPorOrden = new Map<string, { producto: string; kg: number; reasonName: string | null; reasonCode: string | null }[]>();
+  for (const o of ordenes) {
+    const arr = lineasPorOrden.get(o.numeroOrden) ?? [];
+    arr.push({ producto: o.producto, kg: o.cantidadKg, reasonName: o.reasonName ?? null, reasonCode: o.reasonCode ?? null });
+    lineasPorOrden.set(o.numeroOrden, arr);
+  }
+  for (const [num, arr] of lineasPorOrden) productosPorOrden.set(num, JSON.stringify(arr));
+
   const yaExisten = await prisma.novedad.findMany({
     where: { numeroOrden: { in: unicos } },
     select: { numeroOrden: true },
@@ -44,6 +55,7 @@ export async function enviarOrdenesANivel(numeros: string[]): Promise<number> {
           placa: o.asignadoVehiculo,
           cliente: o.cliente,
           numeroOrden: o.numeroOrden,
+          productos: productosPorOrden.get(o.numeroOrden) ?? null,
         },
       });
       creadas += 1;

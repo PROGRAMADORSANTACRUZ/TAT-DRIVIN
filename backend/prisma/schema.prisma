@@ -237,6 +237,9 @@ model Novedad {
   novedad         String?  // Tipo de novedad del selector (Averías, Cliente Cerrado, etc.)
   responsabilidad String?  // Clientes, Comercial, Despacho Bovino, etc.
   noLlego         String?  // JSON: [{producto, despachado, noLlego}]
+  // Snapshot de los productos de la remisión (persistido porque las órdenes
+  // se eliminan al reimportar). JSON: [{producto, kg, reasonName, reasonCode}]
+  productos       String?
   // Referencia al item de planilla
   planillaId      String?
   // Datos del despacho
