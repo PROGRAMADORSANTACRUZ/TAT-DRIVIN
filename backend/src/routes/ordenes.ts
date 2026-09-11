@@ -1390,6 +1390,9 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
           status?: string;
           reason?: string;
           reason_code?: string;
+          comment?: string;
+          comments?: string;
+          observation?: string;
           scenario_token?: string;
           client_name?: string;
         };
@@ -1458,7 +1461,7 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
       consecutivo: number; fecha: string; estadoEntrega: string; novedad: string | null;
       planillaId: string | null; placa: string | null; conductor: string | null;
       auxiliarRuta: string | null; cliente: string | null; numeroOrden: string;
-      productos: string | null;
+      productos: string | null; descripcion: string;
     }[] = [];
 
     let actualizados = 0;
@@ -1518,6 +1521,12 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
         await prisma.novedad.update({ where: { id: existente.id }, data: { productos: productosJson } });
         existente.productos = productosJson;
       }
+      // Comentario libre del repartidor en Drivin -> columna "Detalles" (no pisa un detalle manual).
+      const comentario = (a.comment ?? a.comments ?? a.observation ?? "").trim();
+      if (existente && comentario && !(existente.descripcion ?? "").trim()) {
+        await prisma.novedad.update({ where: { id: existente.id }, data: { descripcion: comentario } });
+        existente.descripcion = comentario;
+      }
       if (nivelEstado) {
         if (existente) {
           // No pisa un estado ya trabajado manualmente distinto de "Sin Novedad".
@@ -1548,6 +1557,7 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
             cliente: planilla?.itemCliente ?? a.client_name ?? null,
             numeroOrden: planilla?.itemNumeroOrden ?? a.code,
             productos: productosJson,
+            descripcion: comentario,
           });
           // Evita duplicados si el mismo code llega repetido.
           novedadPorOrden.set(code, { estadoEntrega: nivelEstado } as (typeof todasNovedades)[number]);
