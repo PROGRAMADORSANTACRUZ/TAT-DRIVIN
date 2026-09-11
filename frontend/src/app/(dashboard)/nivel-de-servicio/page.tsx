@@ -117,6 +117,9 @@ export default function NivelServicioPage() {
   // Modal de resolución de novedad
   const [resolviendo, setResolviendo] = useState<{ key: string; planillaId: string; item: PlanillaItem; planilla: Planilla; novedad: Novedad | null } | null>(null);
 
+  // Modal de detalle por producto (novedades que llegan de Drivin por producto).
+  const [detalles, setDetalles] = useState<{ item: PlanillaItem; planilla: Planilla; productos: Orden[] } | null>(null);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const drivinRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -340,6 +343,18 @@ export default function NivelServicioPage() {
       return new Map(prev).set(key, { ...cur, ...patch });
     });
     if (persist) saveField(planillaId, item, planilla, patch);
+  }
+
+  function openDetallesModal(item: PlanillaItem, planilla: Planilla) {
+    // Empareja por remisión + placa; si no hay coincidencia, por remisión sola.
+    let prods = ordenes.filter(
+      (o) => o.numeroOrden === item.numeroOrden &&
+             o.asignadoVehiculo?.toUpperCase() === planilla.placa.toUpperCase()
+    );
+    if (prods.length === 0) {
+      prods = ordenes.filter((o) => o.numeroOrden === item.numeroOrden);
+    }
+    setDetalles({ item, planilla, productos: prods });
   }
 
   function openReportarModal(planillaId: string, item: PlanillaItem, planilla: Planilla) {
@@ -628,6 +643,16 @@ export default function NivelServicioPage() {
                                 <polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>
                               </svg>
                             </button>
+                          {/* Ver detalles — discriminado de productos con su novedad de Drivin */}
+                          <button
+                            onClick={() => openDetallesModal(item, planilla)}
+                            title="Ver detalle de productos y novedades"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#dfe4e0] bg-white text-[#45505e] hover:bg-[#f4f6f3]"
+                          >
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/>
+                            </svg>
+                          </button>
                         </div>
                       </td>
                       {/* Novedades */}
@@ -739,6 +764,77 @@ export default function NivelServicioPage() {
           onClose={() => setResolviendo(null)}
           onSaved={async () => { setResolviendo(null); await load(false); }}
         />
+      )}
+
+      {/* Modal: Detalle de productos (novedades por producto desde Drivin) */}
+      {detalles && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setDetalles(null)}>
+          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex shrink-0 items-start justify-between border-b border-[#eceef0] px-6 py-4">
+              <div>
+                <h3 className="text-lg font-semibold text-[#14352a]">
+                  Detalle de productos — <span className="font-mono text-[#2f8f4e]">{detalles.item.numeroOrden}</span>
+                </h3>
+                <p className="mt-0.5 text-sm text-[#5f7a68]">
+                  {detalles.item.nombreDestino || detalles.item.destino} · {detalles.item.cliente}
+                </p>
+              </div>
+              <button
+                onClick={() => setDetalles(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#dfe4e0] bg-white text-[#7a8794] hover:bg-[#f4f6f3]"
+                aria-label="Cerrar"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </div>
+
+            <div className="nice-scroll min-h-0 flex-1 overflow-auto px-6 py-4">
+              {detalles.productos.length === 0 ? (
+                <p className="py-8 text-center text-sm text-[#5f7a68]">No hay productos para esta remisión.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[#eceef0] text-xs uppercase tracking-wide text-[#7a8794]">
+                      <th className="px-2 py-2 text-left font-semibold">Producto</th>
+                      <th className="px-2 py-2 text-right font-semibold">Kilos</th>
+                      <th className="px-2 py-2 text-left font-semibold">Novedad (Drivin)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#f0f2ee]">
+                    {detalles.productos.map((o) => (
+                      <tr key={o.id || `${o.numeroOrden}-${o.producto}`}>
+                        <td className="px-2 py-2.5 text-[#14352a]">{o.producto}</td>
+                        <td className="px-2 py-2.5 text-right tabular-nums font-medium text-[#14352a]">{fmtKg(o.cantidadKg)}</td>
+                        <td className="px-2 py-2.5">
+                          {o.reasonName ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#fbeceb] px-2.5 py-1 text-xs font-medium text-[#b3261e]">
+                              <span className="h-1.5 w-1.5 rounded-full bg-[#b3261e]" />
+                              {o.reasonName}{o.reasonCode ? ` (${o.reasonCode})` : ""}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#f2f8ef] px-2.5 py-1 text-xs font-medium text-[#2f8f4e]">
+                              <span className="h-1.5 w-1.5 rounded-full bg-[#2f8f4e]" />
+                              Sin novedad
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="flex shrink-0 justify-end border-t border-[#eceef0] px-6 py-3">
+              <button
+                onClick={() => setDetalles(null)}
+                className="rounded-lg border border-[#dfe4e0] bg-white px-4 py-2 text-sm font-medium text-[#45505e] hover:bg-[#f4f6f3]"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Modal: Reportar Novedad (kg no recibidos) */}

@@ -261,6 +261,9 @@ export interface Orden {
   cargado: boolean;
   cargadoAt: string | null;
   createdAt: string;
+  // Novedad de entrega que llega de Drivin (POD) por producto/remisión.
+  reasonName?: string | null;
+  reasonCode?: string | null;
   // Cliente enrutado por concatenado (NIT) hacia otro cliente distinto al del Excel.
   clienteOriginal?: string;
   clienteAsignado?: string;
