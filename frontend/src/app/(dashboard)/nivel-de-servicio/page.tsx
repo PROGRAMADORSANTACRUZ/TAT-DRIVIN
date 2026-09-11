@@ -130,7 +130,9 @@ export default function NivelServicioPage() {
     if (showLoading) setLoading(true);
     setError(null);
     try {
-      const [plans, novs, ords] = await Promise.all([getPlanillas(), getNovedades(), getOrdenes()]);
+      // Se piden todas las órdenes (incluye Entregado/Rechazado) para tener los
+      // productos y kilos de remisiones ya entregadas en el detalle por producto.
+      const [plans, novs, ords] = await Promise.all([getPlanillas(), getNovedades(), getOrdenes(true)]);
       setPlanillas(plans);
       setOrdenes(ords);
       setNovedades(novs);
@@ -583,12 +585,12 @@ export default function NivelServicioPage() {
                       <td className="px-4 py-2.5 text-right tabular-nums text-sm font-medium text-[#14352a]">{fmtKg(item.kg)}</td>
                       {/* Estado dropdown estilizado */}
                       <td className="px-4 py-2.5">
-                        <div className={`relative inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 ${s.border} ${s.bg}`} title="El estado se sincroniza desde Drivin">
+                        <div className={`relative inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 ${s.border} ${s.bg}`} title="El estado se sincroniza desde Drivin">
                           {isSaving && (
                             <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[#a86a12] animate-pulse ring-2 ring-white" />
                           )}
                           <span className={`h-2 w-2 rounded-full shrink-0 ${s.dot}`} />
-                          <span className={`text-xs font-semibold ${s.text}`}>{draft.estadoEntrega}</span>
+                          <span className={`whitespace-nowrap text-xs font-semibold ${s.text}`}>{draft.estadoEntrega}</span>
                         </div>
                       </td>
                       {/* Botón reportar kg */}
