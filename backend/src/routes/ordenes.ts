@@ -1391,8 +1391,7 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
           reason?: string;
           reason_code?: string;
           comment?: string;
-          comments?: string;
-          observation?: string;
+          customer_comment?: string;
           scenario_token?: string;
           client_name?: string;
         };
@@ -1522,7 +1521,8 @@ router.post("/sync-drivin-estado", requireAuth, requirePermiso("/nivel-de-servic
         existente.productos = productosJson;
       }
       // Comentario libre del repartidor en Drivin -> columna "Detalles" (no pisa un detalle manual).
-      const comentario = (a.comment ?? a.comments ?? a.observation ?? "").trim();
+      // `comment` = Comentarios de la entrega (POD); `customer_comment` = comentario del cliente.
+      const comentario = (a.comment ?? a.customer_comment ?? "").trim();
       if (existente && comentario && !(existente.descripcion ?? "").trim()) {
         await prisma.novedad.update({ where: { id: existente.id }, data: { descripcion: comentario } });
         existente.descripcion = comentario;
