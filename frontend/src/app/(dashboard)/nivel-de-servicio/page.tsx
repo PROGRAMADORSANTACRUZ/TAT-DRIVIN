@@ -649,6 +649,7 @@ export default function NivelServicioPage() {
                                 novedad: draft.novedad || null,
                                 responsabilidad: draft.responsabilidad || null,
                                 noLlego: null,
+                                productos: null,
                                 planillaId,
                                 placa: planilla.placa,
                                 conductor: planilla.conductor,
