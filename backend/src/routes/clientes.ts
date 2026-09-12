@@ -353,22 +353,61 @@ router.post(
   }
 );
 
-// GET /api/clientes/export  -> descarga todos los clientes en un Excel editable
-// (mismas columnas que acepta el import, para actualizar su info y reimportar).
+// GET /api/clientes/export  -> descarga TODOS los clientes (Distribución + TAT) en
+// un Excel editable con las mismas columnas que acepta el import.
 router.get("/export", requireAuth, async (_req, res, next) => {
   try {
-    const clientes = await prisma.cliente.findMany({ orderBy: { cliente: "asc" } });
+    const [clientes, tat] = await Promise.all([
+      prisma.cliente.findMany({ orderBy: { cliente: "asc" } }),
+      prisma.clienteTat.findMany({ where: { eliminado: false }, orderBy: { razonSocial: "asc" } }),
+    ]);
     const headers = [
       ...CAMPOS.map((c) => c.header),
       ...CAMPOS_EXTRA.map((k) => EXTRA_HEADERS[k]),
     ];
-    const rows = clientes.map((c) => {
+    const rows: Record<string, string>[] = [];
+
+    // Clientes de Distribución (tabla Cliente).
+    for (const c of clientes) {
       const src = c as Record<string, unknown>;
       const row: Record<string, string> = {};
       for (const { key, header } of CAMPOS) row[header] = (src[key] as string | null) ?? "";
       for (const key of CAMPOS_EXTRA) row[EXTRA_HEADERS[key]] = (src[key] as string | null) ?? "";
-      return row;
-    });
+      rows.push(row);
+    }
+
+    // Clientes TAT (tabla ClienteTat), mapeados a las mismas columnas.
+    for (const t of tat) {
+      const base = t.codigoTercero ?? t.nit ?? "";
+      const suc = parseInt(String(t.sucursal ?? "").trim(), 10);
+      const codigo = base && Number.isFinite(suc) ? `${base}-${suc}` : base;
+      rows.push({
+        [CAMPOS[0].header]: codigo,                               // Código de Dirección
+        [CAMPOS[1].header]: t.descripcionSucursal ?? t.razonSocial ?? "", // Nombre de Dirección
+        [CAMPOS[2].header]: t.razonSocial ?? "",                 // Cliente
+        [CAMPOS[3].header]: "",                                   // Tipo de Dirección
+        [CAMPOS[4].header]: t.direccion1 ?? "",                  // Dirección
+        [CAMPOS[5].header]: t.referencia ?? "",                  // Referencia
+        [CAMPOS[6].header]: t.descripcionSucursal ?? "",         // Descripción
+        [CAMPOS[7].header]: t.ciudad ?? "",                      // Comuna
+        [CAMPOS[8].header]: t.departamento ?? "",               // Provincia
+        [CAMPOS[9].header]: "",                                   // Región
+        [CAMPOS[10].header]: t.pais ?? "",                      // País
+        [CAMPOS[11].header]: "",                                  // Código Postal
+        [CAMPOS[12].header]: t.lat ?? "",                        // Lat
+        [CAMPOS[13].header]: t.lon ?? "",                        // Lon
+        [EXTRA_HEADERS.barrio]: t.barrio ?? "",
+        [EXTRA_HEADERS.manzana]: t.manzana ?? "",
+        [EXTRA_HEADERS.lote]: t.lote ?? "",
+        [EXTRA_HEADERS.tipoVia]: t.tipoVia ?? "",
+        [EXTRA_HEADERS.telefono]: t.telefono ?? t.celular ?? "",
+        [EXTRA_HEADERS.correo]: t.correo ?? "",
+        [EXTRA_HEADERS.puntoVenta]: t.puntoVenta ?? "",
+        [EXTRA_HEADERS.tipo]: t.tipo ?? "TAT",
+        [EXTRA_HEADERS.vendedor]: t.vendedor ?? "",
+      });
+    }
+
     const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
     // Si no hay clientes, deja al menos la fila de encabezados como plantilla.
     if (rows.length === 0) XLSX.utils.sheet_add_aoa(ws, [headers], { origin: "A1" });
