@@ -59,6 +59,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (!res.ok) {
+    // Sesión inválida/expirada o sin token: limpia y redirige a login.
+    if (res.status === 401) redirigirALogin();
     // Intenta leer el mensaje del backend (JSON { error }); si la respuesta no es
     // JSON (p. ej. página 502 del proxy/Cloudflare) usa un mensaje claro por status.
     let backendMsg = "";
@@ -71,6 +73,15 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   return (await res.json().catch(() => ({}))) as T;
+}
+
+// Cierra la sesión local y lleva al usuario a /login (evita bucles si ya está ahí).
+function redirigirALogin(): void {
+  if (typeof window === "undefined") return;
+  clearSession();
+  if (!window.location.pathname.startsWith("/login")) {
+    window.location.replace("/login");
+  }
 }
 
 export function login(cedula: string, password: string): Promise<LoginResponse> {
@@ -478,6 +489,7 @@ export async function importClientes(
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401) redirigirALogin();
     throw new ApiError(res.status, data?.error ?? "Error al importar");
   }
   return data as { importados: number };
@@ -494,6 +506,7 @@ export async function exportClientes(): Promise<void> {
     throw new ApiError(0, "No se pudo conectar con el servidor");
   }
   if (!res.ok) {
+    if (res.status === 401) redirigirALogin();
     const err = await res.json().catch(() => ({}));
     throw new ApiError(res.status, err?.error ?? "No se pudo exportar");
   }
