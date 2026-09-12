@@ -119,8 +119,21 @@ const CAMPOS: { key: keyof ClienteRow; header: string }[] = [
   { key: "lon", header: "Lon" },
 ];
 
-// Campos string extra (editables desde el modal, no vienen del Excel).
+// Campos string extra (editables desde el modal y también exportables/importables por Excel).
 const CAMPOS_EXTRA = ["barrio", "manzana", "lote", "tipoVia", "telefono", "correo", "puntoVenta", "tipo", "vendedor"] as const;
+
+// Encabezado del Excel para cada campo extra (exportar/importar usan el mismo).
+const EXTRA_HEADERS: Record<(typeof CAMPOS_EXTRA)[number], string> = {
+  barrio: "Barrio",
+  manzana: "Manzana",
+  lote: "Lote",
+  tipoVia: "Tipo de Vía",
+  telefono: "Teléfono",
+  correo: "Correo",
+  puntoVenta: "Punto de Venta",
+  tipo: "Tipo",
+  vendedor: "Vendedor",
+};
 
 interface ClienteRow {
   codigoDireccion: string;
@@ -137,6 +150,16 @@ interface ClienteRow {
   codigoPostal: string;
   lat: string;
   lon: string;
+  // Campos extra (opcionales; presentes si el Excel exportado los trae).
+  barrio?: string;
+  manzana?: string;
+  lote?: string;
+  tipoVia?: string;
+  telefono?: string;
+  correo?: string;
+  puntoVenta?: string;
+  tipo?: string;
+  vendedor?: string;
 }
 
 function parseClientes(buffer: Buffer): ClienteRow[] {
@@ -154,6 +177,10 @@ function parseClientes(buffer: Buffer): ClienteRow[] {
   for (const { key, header: label } of CAMPOS) {
     idx[key] = header.findIndex((h) => h === norm(label));
   }
+  // Índices de las columnas extra (solo si vienen en el Excel exportado).
+  for (const key of CAMPOS_EXTRA) {
+    idx[key] = header.findIndex((h) => h === norm(EXTRA_HEADERS[key]));
+  }
 
   const pick = (r: unknown[], i: number) =>
     i >= 0 ? String(r[i] ?? "").trim() : "";
@@ -164,6 +191,10 @@ function parseClientes(buffer: Buffer): ClienteRow[] {
     const row = {} as ClienteRow;
     for (const { key } of CAMPOS) {
       row[key] = pick(r, idx[key]);
+    }
+    for (const key of CAMPOS_EXTRA) {
+      const v = pick(r, idx[key]);
+      if (v) row[key] = v;
     }
     if (!row.codigoDireccion && !row.nombreDireccion && !row.cliente) continue;
     out.push(row);
@@ -290,9 +321,29 @@ router.post(
         throw new HttpError(400, "El archivo no contiene clientes válidos");
       }
 
+      // Conserva consecutivos y estado activo por código de dirección al reemplazar
+      // el maestro, para no perder los cruces ya asignados al reimportar el Excel.
+      const previos = await prisma.cliente.findMany({
+        select: { codigoDireccion: true, consecutivos: true, activo: true },
+      });
+      const previoPorCodigo = new Map<string, { consecutivos: string | null; activo: boolean }>();
+      for (const c of previos) {
+        if (c.codigoDireccion) {
+          previoPorCodigo.set(norm(c.codigoDireccion), { consecutivos: c.consecutivos, activo: c.activo });
+        }
+      }
+      const data = clientes.map((c) => {
+        const prev = c.codigoDireccion ? previoPorCodigo.get(norm(c.codigoDireccion)) : undefined;
+        return {
+          ...c,
+          consecutivos: prev?.consecutivos ?? undefined,
+          activo: prev?.activo ?? undefined,
+        };
+      });
+
       await prisma.$transaction([
         prisma.cliente.deleteMany(),
-        prisma.cliente.createMany({ data: clientes }),
+        prisma.cliente.createMany({ data }),
       ]);
 
       res.status(201).json({ importados: clientes.length });
@@ -301,6 +352,37 @@ router.post(
     }
   }
 );
+
+// GET /api/clientes/export  -> descarga todos los clientes en un Excel editable
+// (mismas columnas que acepta el import, para actualizar su info y reimportar).
+router.get("/export", requireAuth, async (_req, res, next) => {
+  try {
+    const clientes = await prisma.cliente.findMany({ orderBy: { cliente: "asc" } });
+    const headers = [
+      ...CAMPOS.map((c) => c.header),
+      ...CAMPOS_EXTRA.map((k) => EXTRA_HEADERS[k]),
+    ];
+    const rows = clientes.map((c) => {
+      const src = c as Record<string, unknown>;
+      const row: Record<string, string> = {};
+      for (const { key, header } of CAMPOS) row[header] = (src[key] as string | null) ?? "";
+      for (const key of CAMPOS_EXTRA) row[EXTRA_HEADERS[key]] = (src[key] as string | null) ?? "";
+      return row;
+    });
+    const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
+    // Si no hay clientes, deja al menos la fila de encabezados como plantilla.
+    if (rows.length === 0) XLSX.utils.sheet_add_aoa(ws, [headers], { origin: "A1" });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Clientes");
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    const fecha = new Date().toISOString().slice(0, 10);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="clientes-distrilog-${fecha}.xlsx"`);
+    res.send(buf);
+  } catch (err) {
+    next(err);
+  }
+});
 
 // PUT /api/clientes/:id  -> actualiza los campos editables
 router.put("/:id", requireAuth, requirePermiso("/configuracion/clientes"), async (req, res, next) => {

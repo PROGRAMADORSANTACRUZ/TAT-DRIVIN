@@ -9,7 +9,7 @@ import {
   getClientes,
   getClientesTat,
   importClientes,
-  syncClientesTat,
+  exportClientes,
   type Cliente,
   type ClienteTat,
 } from "@/lib/api";
@@ -87,7 +87,7 @@ export default function ClientesPage() {
   const [clientesTat, setClientesTat] = useState<ClienteTat[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -125,7 +125,7 @@ export default function ClientesPage() {
     setMessage(null);
     try {
       const { importados } = await importClientes(file);
-      setMessage(`Se importaron ${importados} clientes de Grandes Superficies.`);
+      setMessage(`Se importaron ${importados} clientes. Los consecutivos ya asignados se conservaron.`);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al importar");
@@ -134,21 +134,17 @@ export default function ClientesPage() {
     }
   }
 
-  async function handleSync() {
-    setSyncing(true);
+  async function handleExport() {
+    setExporting(true);
     setError(null);
     setMessage(null);
     try {
-      const { creados, actualizados, preservados, duplicados } = await syncClientesTat();
-      setMessage(
-        `TAT: ${creados} nuevos, ${actualizados} actualizados, ${preservados} conservados.` +
-          (duplicados ? ` ${duplicados} duplicados por NIT/sucursal descartados.` : "")
-      );
-      await load();
+      await exportClientes();
+      setMessage("Excel de clientes descargado. Edítalo y vuelve a importarlo para actualizar la info.");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Error al sincronizar");
+      setError(err instanceof ApiError ? err.message : "Error al exportar");
     } finally {
-      setSyncing(false);
+      setExporting(false);
     }
   }
 
@@ -179,7 +175,7 @@ export default function ClientesPage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-2xl font-bold text-[#14352a]">Clientes</h1>
           <p className="text-sm text-[#5f7a68]">
-            Maestro unificado de Grandes Superficies y TAT.
+            Maestro de clientes. Descárgalo en Excel, actualiza la info y vuelve a importarlo.
           </p>
         </div>
 
@@ -192,24 +188,23 @@ export default function ClientesPage() {
         />
         <div className="flex items-center gap-2">
           <button
-            onClick={handleSync}
-            disabled={syncing}
+            onClick={handleExport}
+            disabled={exporting}
             className={btn}
           >
-            {syncing ? (
+            {exporting ? (
               <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.37 0 0 5.37 0 12h4Z" />
               </svg>
             ) : (
               <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 2v6h-6" />
-                <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-                <path d="M3 22v-6h6" />
-                <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
             )}
-            {syncing ? "Sincronizando…" : "Sincronizar TAT"}
+            {exporting ? "Descargando…" : "Descargar Excel"}
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -228,7 +223,7 @@ export default function ClientesPage() {
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
             )}
-            {importing ? "Importando…" : "Importar Grandes Superficies"}
+            {importing ? "Importando…" : "Importar Excel"}
           </button>
         </div>
       </header>
@@ -265,8 +260,8 @@ export default function ClientesPage() {
         ) : filtered.length === 0 ? (
           <p className="p-10 text-center text-sm text-[#5f7a68]">
             No hay clientes. Usa{" "}
-            <span className="font-medium">Importar Grandes Superficies</span> o{" "}
-            <span className="font-medium">Sincronizar TAT</span> para cargarlos.
+            <span className="font-medium">Importar Excel</span> para cargarlos (puedes partir de{" "}
+            <span className="font-medium">Descargar Excel</span>).
           </p>
         ) : (
           <div className="nice-scroll min-h-0 flex-1 overflow-auto">

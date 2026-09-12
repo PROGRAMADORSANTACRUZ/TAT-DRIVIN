@@ -483,6 +483,31 @@ export async function importClientes(
   return data as { importados: number };
 }
 
+// Descarga el maestro de clientes en un Excel editable (para actualizar y reimportar).
+export async function exportClientes(): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api/clientes/export`, {
+      headers: { ...authHeader() },
+    });
+  } catch {
+    throw new ApiError(0, "No se pudo conectar con el servidor");
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, err?.error ?? "No se pudo exportar");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `clientes-distrilog-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export interface ClienteTat {
   id: string;
   codigoTercero: string | null;
