@@ -70,6 +70,39 @@ async function consultarNominatim(q: string, limit: number): Promise<SugerenciaG
   return Array.isArray(data) ? data : [];
 }
 
+interface DatosDireccion {
+  direccion: string;
+  barrio: string;
+  ciudad: string;
+  departamento: string;
+}
+
+function barrioDe(a: Record<string, string>): string {
+  return a.neighbourhood || a.suburb || a.quarter || a.residential || a.city_district || "";
+}
+
+function ciudadDe(a: Record<string, string>): string {
+  return a.city || a.town || a.municipality || a.village || a.county || "";
+}
+
+// Reverse geocoding: de lat/lon a dirección bien formada, barrio, ciudad y departamento.
+async function reverseNominatim(lat: number, lon: number): Promise<DatosDireccion | null> {
+  const r = await fetch(
+    `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&addressdetails=1&zoom=18`,
+    { headers: { "Accept-Language": "es" } }
+  );
+  const d = await r.json();
+  const a: Record<string, string> = d?.address ?? {};
+  if (!a || Object.keys(a).length === 0) return null;
+  const via = [a.road, a.house_number].filter(Boolean).join(" ");
+  return {
+    direccion: via || String(d.display_name ?? "").split(",")[0] || "",
+    barrio: barrioDe(a),
+    ciudad: ciudadDe(a),
+    departamento: a.state || a.region || "",
+  };
+}
+
 export default function MapaDireccion({
   direccion,
   barrio,
@@ -80,6 +113,8 @@ export default function MapaDireccion({
   onUbicacion,
   onBarrio,
   onCiudad,
+  onDireccion,
+  onDepartamento,
   altoMapa = 220,
 }: {
   direccion: string;
@@ -91,6 +126,8 @@ export default function MapaDireccion({
   onUbicacion: (lat: number | null, lng: number | null) => void;
   onBarrio?: (barrio: string) => void;
   onCiudad?: (ciudad: string) => void;
+  onDireccion?: (direccion: string) => void;
+  onDepartamento?: (departamento: string) => void;
   altoMapa?: number;
 }) {
   const [abierto, setAbierto] = useState(lat != null && lng != null);
@@ -100,6 +137,30 @@ export default function MapaDireccion({
   const [sugerencias, setSugerencias] = useState<SugerenciaGeo[]>([]);
   const [modalSug, setModalSug] = useState(false);
   const [cargandoSug, setCargandoSug] = useState(false);
+  const [cargandoRev, setCargandoRev] = useState(false);
+
+  // Rellena dirección/barrio/ciudad/depto a partir de un lat/lon dado.
+  async function rellenarDesde(la: number, lo: number, exito: string) {
+    setCargandoRev(true);
+    setEstado({ tipo: "info", msg: "Leyendo dirección de la ubicación…" });
+    try {
+      const info = await reverseNominatim(la, lo);
+      if (info) {
+        if (info.direccion) onDireccion?.(info.direccion);
+        if (info.barrio) onBarrio?.(info.barrio);
+        if (info.ciudad) onCiudad?.(info.ciudad);
+        if (info.departamento) onDepartamento?.(info.departamento);
+        setSugerencia([info.direccion, info.barrio, info.ciudad].filter(Boolean).join(", "));
+        setEstado({ tipo: "ok", msg: exito });
+      } else {
+        setEstado({ tipo: "info", msg: "Ubicación guardada, no se pudo leer la dirección." });
+      }
+    } catch {
+      setEstado({ tipo: "error", msg: "No se pudo leer la dirección de la ubicación." });
+    } finally {
+      setCargandoRev(false);
+    }
+  }
 
   const hayInfo = Boolean(direccion.trim() || barrio.trim() || ciudad.trim());
 
@@ -233,6 +294,14 @@ export default function MapaDireccion({
           )}
           <button
             type="button"
+            onClick={() => { if (lat != null && lng != null) void rellenarDesde(lat, lng, "Dirección corregida desde la ubicación."); }}
+            disabled={cargandoRev || lat == null || lng == null}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#2f8f4e]/50 bg-white px-3 py-1.5 text-xs font-semibold text-[#2f8f4e] shadow-sm transition hover:bg-[#eef7f0] disabled:opacity-40"
+          >
+            {cargandoRev ? "Leyendo…" : "Corregir desde ubicación"}
+          </button>
+          <button
+            type="button"
             onClick={verSugerencias}
             disabled={cargandoSug || !hayInfo}
             className="inline-flex items-center gap-1.5 rounded-lg border border-[#a86a12]/50 bg-white px-3 py-1.5 text-xs font-semibold text-[#a86a12] shadow-sm transition hover:bg-[#fdf6e9] disabled:opacity-40"
@@ -268,7 +337,7 @@ export default function MapaDireccion({
             height={altoMapa}
             onMover={(la, lo) => {
               onUbicacion(la, lo);
-              setEstado({ tipo: "ok", msg: "Ubicación ajustada. Guarda para conservar." });
+              void rellenarDesde(la, lo, "Dirección completada desde la ubicación.");
             }}
           />
           <p className="mt-1 text-[0.7rem] text-[#7a8794]">
