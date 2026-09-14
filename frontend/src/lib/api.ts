@@ -470,9 +470,18 @@ export function cruzarConsecutivosAuto(): Promise<{
   return request("/api/clientes/auto-consecutivos", { method: "POST" });
 }
 
+export interface ImportacionClientesResumen {
+  totalFilas: number;
+  creados: number;
+  actualizados: number;
+  sinCambios: number;
+  descartadas: number;
+  importados: number;
+}
+
 export async function importClientes(
   file: File
-): Promise<{ importados: number }> {
+): Promise<ImportacionClientesResumen> {
   const form = new FormData();
   form.append("file", file);
 
@@ -492,7 +501,7 @@ export async function importClientes(
     if (res.status === 401) redirigirALogin();
     throw new ApiError(res.status, data?.error ?? "Error al importar");
   }
-  return data as { importados: number };
+  return data as ImportacionClientesResumen;
 }
 
 // Descarga el maestro de clientes en un Excel editable (para actualizar y reimportar).

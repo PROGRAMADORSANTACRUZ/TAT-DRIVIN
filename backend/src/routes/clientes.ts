@@ -162,7 +162,37 @@ interface ClienteRow {
   vendedor?: string;
 }
 
-function parseClientes(buffer: Buffer): ClienteRow[] {
+// Alias de encabezados aceptados por columna (tolerante a mayúsculas/tildes).
+// Incluye los nombres propios de DISTRILOG y los que exporta SIGCOMPRO
+// (Nit_Cedula, Nombre, Direccion, Referencia, Barrio, Ciudad, Telefono,
+// Punto_venta), para poder importar directamente un Excel exportado de allá.
+const ALIASES: Record<string, string[]> = {
+  codigoDireccion: ["Código de Dirección", "Codigo de Direccion", "Código", "Codigo", "Nit_Cedula", "Nit Cedula", "Nit/Cedula", "Nit", "Cedula"],
+  nombreDireccion: ["Nombre de Dirección", "Nombre de Direccion", "Descripción Sucursal", "Descripcion Sucursal"],
+  cliente: ["Cliente", "Nombre", "Nombres", "Razón Social", "Razon Social"],
+  tipoDireccion: ["Tipo de Dirección", "Tipo de Direccion"],
+  direccion: ["Dirección", "Direccion"],
+  referencia: ["Referencia"],
+  descripcion: ["Descripción", "Descripcion"],
+  comuna: ["Comuna", "Ciudad"],
+  provincia: ["Provincia", "Departamento"],
+  region: ["Región", "Region"],
+  pais: ["País", "Pais"],
+  codigoPostal: ["Código Postal", "Codigo Postal"],
+  lat: ["Lat", "Latitud"],
+  lon: ["Lon", "Lng", "Longitud"],
+  barrio: ["Barrio"],
+  manzana: ["Manzana"],
+  lote: ["Lote"],
+  tipoVia: ["Tipo de Vía", "Tipo de Via"],
+  telefono: ["Teléfono", "Telefono", "Celular"],
+  correo: ["Correo", "Email"],
+  puntoVenta: ["Punto de Venta", "Punto_venta", "Puntoventa", "Punto"],
+  tipo: ["Tipo"],
+  vendedor: ["Vendedor"],
+};
+
+function parseClientes(buffer: Buffer): { rows: ClienteRow[]; presentes: Set<string> } {
   const wb = XLSX.read(buffer, { type: "buffer" });
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
@@ -170,17 +200,16 @@ function parseClientes(buffer: Buffer): ClienteRow[] {
     blankrows: false,
     defval: "",
   });
-  if (rows.length < 2) return [];
+  if (rows.length < 2) return { rows: [], presentes: new Set() };
 
   const header = rows[0].map(norm);
   const idx: Record<string, number> = {};
-  for (const { key, header: label } of CAMPOS) {
-    idx[key] = header.findIndex((h) => h === norm(label));
+  for (const key of Object.keys(ALIASES)) {
+    const aliases = ALIASES[key].map(norm);
+    idx[key] = header.findIndex((h) => aliases.includes(h));
   }
-  // Índices de las columnas extra (solo si vienen en el Excel exportado).
-  for (const key of CAMPOS_EXTRA) {
-    idx[key] = header.findIndex((h) => h === norm(EXTRA_HEADERS[key]));
-  }
+  // Columnas que sí vienen en este Excel (para no tocar en la BD las que no traiga).
+  const presentes = new Set(Object.keys(idx).filter((k) => idx[k] >= 0));
 
   const pick = (r: unknown[], i: number) =>
     i >= 0 ? String(r[i] ?? "").trim() : "";
@@ -199,8 +228,27 @@ function parseClientes(buffer: Buffer): ClienteRow[] {
     if (!row.codigoDireccion && !row.nombreDireccion && !row.cliente) continue;
     out.push(row);
   }
-  return out;
+  return { rows: out, presentes };
 }
+
+// Normaliza para COMPARAR contenido: ignora mayúsculas/minúsculas, tildes y
+// espacios repetidos. Así un Excel re-exportado (mismo dato, distinto "casing")
+// no se marca como cambiado y no pisa verificaciones ya hechas (lat/lon).
+function comparable(v: string | null | undefined): string {
+  return (v ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+// Campos "de contenido" a comparar/actualizar (todo excepto la clave y lat/lon,
+// que se manejan aparte). Derivado de CAMPOS/CAMPOS_EXTRA para no duplicar la lista.
+const CAMPOS_CONTENIDO = [
+  ...CAMPOS.map((c) => c.key).filter((k) => k !== "codigoDireccion" && k !== "lat" && k !== "lon"),
+  ...CAMPOS_EXTRA,
+] as const;
 
 // GET /api/clientes
 router.get("/", requireAuth, async (_req, res, next) => {
@@ -305,6 +353,13 @@ router.post("/:id/consecutivo", requireAuth, requirePermiso("/configuracion/clie
 });
 
 // POST /api/clientes/import  (multipart, campo "file")
+// Importa/actualiza el maestro por UPSERT, igual que Sigcompro: NUNCA borra
+// clientes existentes que no vengan en el archivo. Empareja por código de
+// dirección (o por nombre si la fila no trae código) y solo compara/actualiza
+// las columnas que el Excel realmente trae, ignorando mayúsculas/tildes para
+// no marcar como "cambiado" un dato que solo difiere en formato. Acepta tanto
+// el formato propio de DISTRILOG como el que exporta Sigcompro (Nit_Cedula,
+// Nombre, Direccion, Referencia, Barrio, Ciudad, Telefono, Punto_venta).
 router.post(
   "/import",
   requireAuth,
@@ -316,37 +371,85 @@ router.post(
         throw new HttpError(400, "No se recibió ningún archivo");
       }
 
-      const clientes = parseClientes(req.file.buffer);
-      if (clientes.length === 0) {
-        throw new HttpError(400, "El archivo no contiene clientes válidos");
+      const { rows: filas, presentes } = parseClientes(req.file.buffer);
+      if (filas.length === 0) {
+        throw new HttpError(
+          400,
+          "El archivo no contiene clientes válidos (falta Código de Dirección / Nit, Nombre o Cliente)."
+        );
       }
 
-      // Conserva consecutivos y estado activo por código de dirección al reemplazar
-      // el maestro, para no perder los cruces ya asignados al reimportar el Excel.
-      const previos = await prisma.cliente.findMany({
-        select: { codigoDireccion: true, consecutivos: true, activo: true },
-      });
-      const previoPorCodigo = new Map<string, { consecutivos: string | null; activo: boolean }>();
-      for (const c of previos) {
-        if (c.codigoDireccion) {
-          previoPorCodigo.set(norm(c.codigoDireccion), { consecutivos: c.consecutivos, activo: c.activo });
+      // Clave natural: código de dirección; si la fila no trae código, usa el
+      // nombre del cliente (evita duplicar filas sin código al reimportar).
+      const clave = (f: { codigoDireccion: string; cliente: string; nombreDireccion: string }): string => {
+        const cod = norm(f.codigoDireccion);
+        if (cod) return `COD:${cod}`;
+        const nombre = norm(f.cliente || f.nombreDireccion);
+        return nombre ? `NOM:${nombre}` : "";
+      };
+
+      // Deduplica por clave dentro del archivo (gana la última fila).
+      const porClave = new Map<string, ClienteRow>();
+      let descartadas = 0;
+      for (const f of filas) {
+        const k = clave(f);
+        if (!k) { descartadas++; continue; }
+        porClave.set(k, f);
+      }
+
+      const existentes = await prisma.cliente.findMany();
+      const existentePorClave = new Map<string, (typeof existentes)[number]>();
+      for (const c of existentes) {
+        const k = clave({ codigoDireccion: c.codigoDireccion ?? "", cliente: c.cliente ?? "", nombreDireccion: c.nombreDireccion ?? "" });
+        if (k) existentePorClave.set(k, c);
+      }
+
+      let creados = 0;
+      let actualizados = 0;
+      let sinCambios = 0;
+
+      await prisma.$transaction(async (tx) => {
+        for (const [k, f] of porClave) {
+          const actual = existentePorClave.get(k);
+          if (!actual) {
+            // Nuevo cliente: se crea con lo que traiga el archivo.
+            const data: Record<string, string | null> = {};
+            for (const { key } of CAMPOS) data[key] = f[key] || null;
+            for (const key of CAMPOS_EXTRA) data[key] = f[key] || null;
+            await tx.cliente.create({ data: { ...data, consecutivos: JSON.stringify([]) } });
+            creados++;
+            continue;
+          }
+          // Existente: compara SOLO las columnas que sí vinieron en este Excel;
+          // las que el archivo no trae (p. ej. si es un export parcial) no se tocan.
+          let difiereContenido = false;
+          const data: Record<string, string | null> = {};
+          for (const key of CAMPOS_CONTENIDO) {
+            if (!presentes.has(key)) continue;
+            const nuevo = (f as unknown as Record<string, string | undefined>)[key] ?? "";
+            const previo = (actual as unknown as Record<string, string | null>)[key];
+            if (comparable(previo) !== comparable(nuevo)) difiereContenido = true;
+            data[key] = nuevo || null;
+          }
+          if (!difiereContenido) { sinCambios++; continue; }
+          // El contenido cambió de verdad: limpia lat/lon para marcar "sin
+          // verificar" en el mapa (igual que Sigcompro), salvo que el propio
+          // archivo ya traiga coordenadas (p. ej. reimportar nuestro export).
+          data.lat = presentes.has("lat") ? (f.lat || null) : null;
+          data.lon = presentes.has("lon") ? (f.lon || null) : null;
+          await tx.cliente.update({ where: { id: actual.id }, data });
+          actualizados++;
         }
-      }
-      const data = clientes.map((c) => {
-        const prev = c.codigoDireccion ? previoPorCodigo.get(norm(c.codigoDireccion)) : undefined;
-        return {
-          ...c,
-          consecutivos: prev?.consecutivos ?? undefined,
-          activo: prev?.activo ?? undefined,
-        };
       });
 
-      await prisma.$transaction([
-        prisma.cliente.deleteMany(),
-        prisma.cliente.createMany({ data }),
-      ]);
-
-      res.status(201).json({ importados: clientes.length });
+      res.status(201).json({
+        totalFilas: porClave.size,
+        creados,
+        actualizados,
+        sinCambios,
+        descartadas,
+        importados: creados + actualizados,
+      });
     } catch (err) {
       next(err);
     }

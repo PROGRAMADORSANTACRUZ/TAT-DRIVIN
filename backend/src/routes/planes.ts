@@ -45,11 +45,11 @@ function normKey(s: unknown): string {
     .trim();
 }
 
-function titleCase(s: unknown): string {
-  return String(s ?? "")
-    .toLowerCase()
-    .replace(/(?:^|\s)\S/g, (c) => c.toUpperCase())
-    .trim();
+// Sin transformar mayúsculas/minúsculas (igual que Sigcompro): se envía el texto
+// tal cual está en el maestro. La antigua "titleCase" rompía códigos como
+// "5A" -> "5a" o "PBX" -> "Pbx" al bajar todo a minúsculas antes de capitalizar.
+function soloTexto(s: unknown): string {
+  return String(s ?? "").trim();
 }
 
 // Alias: nombre en las órdenes → nombre real en Drivin / Clientes GS.
@@ -340,7 +340,7 @@ export async function buildScenarioPayload(opts: {
       orders.push({
         code: numeroOrden,
         alt_code: `${normKey(cliente)}-${normKey(destino)}`,
-        description: vendedor ? titleCase(vendedor) : undefined,
+        description: vendedor ? soloTexto(vendedor) : undefined,
         billing_date: ventaISO,
         units: totalKg,
         units_1: totalKg,
@@ -376,18 +376,18 @@ export async function buildScenarioPayload(opts: {
     }
     clients.push({
       code: codigoFinal,
-      name: titleCase(nombreFinal),
-      client_name: titleCase(nombreFinal),
+      name: soloTexto(nombreFinal),
+      client_name: soloTexto(nombreFinal),
       client_code: codigoFinal,
-      address: titleCase(asignado?.direccion ?? direccionTat ?? drivinMatch?.address1 ?? geo?.direccion ?? destino),
-      reference: referencia ? titleCase(referencia) : undefined,
-      city: titleCase(city),
-      state: departamento ? titleCase(departamento) : undefined,
+      address: soloTexto(asignado?.direccion ?? direccionTat ?? drivinMatch?.address1 ?? geo?.direccion ?? destino),
+      reference: referencia ? soloTexto(referencia) : undefined,
+      city: soloTexto(city),
+      state: departamento ? soloTexto(departamento) : undefined,
       country: asignado?.pais ?? geo?.pais ?? "Colombia",
       lat: latStr ? parseFloat(latStr) : null,
       lng: lngStr ? parseFloat(lngStr) : null,
       vehicle_code: vehiculoCliente,
-      contact_name: titleCase(nombreFinal),
+      contact_name: soloTexto(nombreFinal),
       contact_phone: telefono ?? undefined,
       contact_email: correo ?? undefined,
       orders,

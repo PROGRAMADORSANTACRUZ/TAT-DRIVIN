@@ -124,8 +124,12 @@ export default function ClientesPage() {
     setError(null);
     setMessage(null);
     try {
-      const { importados } = await importClientes(file);
-      setMessage(`Se importaron ${importados} clientes. Los consecutivos ya asignados se conservaron.`);
+      const r = await importClientes(file);
+      setMessage(
+        `Importación: ${r.creados} nuevos, ${r.actualizados} actualizados, ${r.sinCambios} sin cambios.` +
+          (r.descartadas ? ` ${r.descartadas} filas descartadas (sin código/nombre).` : "") +
+          " Los clientes que no venían en el archivo NO se tocaron."
+      );
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al importar");
