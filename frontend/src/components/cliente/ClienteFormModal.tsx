@@ -301,7 +301,7 @@ export default function ClienteFormModal({
                     Cliente activo
                   </label>
                   <Campo label="Nombre / Razón social *" full>
-                    <input value={form.nombre} onChange={(e) => set("nombre", e.target.value)} onBlur={(e) => set("nombre", tc(e.target.value))} className={INPUT_CLS} />
+                    <input value={form.nombre} onChange={(e) => set("nombre", tc(e.target.value))} className={INPUT_CLS} />
                   </Campo>
                 </div>
               </Bloque>
@@ -310,7 +310,7 @@ export default function ClienteFormModal({
                 <DireccionInput value={form.direccion} onChange={(v) => set("direccion", v)} />
                 <div className="mt-3">
                   <Campo label="Referencia">
-                    <input value={form.referencia} onChange={(e) => set("referencia", e.target.value)} placeholder="Ej. frente al parque, casa esquinera…" className={INPUT_CLS} />
+                    <input value={form.referencia} onChange={(e) => set("referencia", tc(e.target.value))} placeholder="Ej. Frente Al Parque, Casa Esquinera…" className={INPUT_CLS} />
                   </Campo>
                 </div>
               </Bloque>
@@ -399,7 +399,7 @@ export default function ClienteFormModal({
               <Bloque titulo="Barrio y ciudad">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Campo label="Barrio">
-                    <input value={form.barrio} onChange={(e) => set("barrio", e.target.value)} onBlur={(e) => set("barrio", tc(e.target.value))} placeholder="Barrio" className={INPUT_CLS} />
+                    <input value={form.barrio} onChange={(e) => set("barrio", tc(e.target.value))} placeholder="Barrio" className={INPUT_CLS} />
                   </Campo>
                   <Campo label="Ciudad">
                     <CiudadInput
@@ -431,6 +431,8 @@ export default function ClienteFormModal({
                   onUbicacion={(la, lo) => setForm((p) => ({ ...p, lat: la, lng: lo }))}
                   onBarrio={(b) => set("barrio", b)}
                   onCiudad={(ci) => setForm((p) => ({ ...p, ciudad: ci, departamento: departamentoDeCiudad(ci) ?? p.departamento }))}
+                  onDireccion={(d) => set("direccion", tc(d))}
+                  onDepartamento={(dep) => set("departamento", tc(dep))}
                 />
               </Bloque>
             </div>

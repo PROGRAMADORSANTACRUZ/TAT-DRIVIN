@@ -192,6 +192,19 @@ const ALIASES: Record<string, string[]> = {
   vendedor: ["Vendedor"],
 };
 
+// Primera letra de cada palabra en mayúscula (igual que el modal de edición).
+// Solo se usa para Nombre/Cliente, Referencia y Barrio; el resto de campos
+// (p. ej. Dirección) se importan tal cual para no romper códigos como "5A".
+function tituloAuto(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/(?:^|\s)\S/g, (c) => c.toUpperCase())
+    .trim();
+}
+
+// Campos a los que se les aplica automáticamente el título (primera mayúscula).
+const CAMPOS_TITULO = new Set(["cliente", "referencia", "barrio"]);
+
 function parseClientes(buffer: Buffer): { rows: ClienteRow[]; presentes: Set<string> } {
   const wb = XLSX.read(buffer, { type: "buffer" });
   const sheet = wb.Sheets[wb.SheetNames[0]];
@@ -211,18 +224,20 @@ function parseClientes(buffer: Buffer): { rows: ClienteRow[]; presentes: Set<str
   // Columnas que sí vienen en este Excel (para no tocar en la BD las que no traiga).
   const presentes = new Set(Object.keys(idx).filter((k) => idx[k] >= 0));
 
-  const pick = (r: unknown[], i: number) =>
-    i >= 0 ? String(r[i] ?? "").trim() : "";
+  const pick = (r: unknown[], i: number, key: string) => {
+    const v = i >= 0 ? String(r[i] ?? "").trim() : "";
+    return v && CAMPOS_TITULO.has(key) ? tituloAuto(v) : v;
+  };
 
   const out: ClienteRow[] = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     const row = {} as ClienteRow;
     for (const { key } of CAMPOS) {
-      row[key] = pick(r, idx[key]);
+      row[key] = pick(r, idx[key], key);
     }
     for (const key of CAMPOS_EXTRA) {
-      const v = pick(r, idx[key]);
+      const v = pick(r, idx[key], key);
       if (v) row[key] = v;
     }
     if (!row.codigoDireccion && !row.nombreDireccion && !row.cliente) continue;
