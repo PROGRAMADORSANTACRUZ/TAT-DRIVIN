@@ -31,8 +31,8 @@ function fromGS(c: Cliente): Row {
     codigo: c.codigoDireccion,
     nombre: c.cliente || c.nombreDireccion,
     direccion: c.direccion,
-    ciudad: c.comuna,
-    departamento: c.provincia,
+    ciudad: c.provincia,
+    departamento: c.region,
     pais: c.pais,
     cliente: c,
   };
