@@ -16,10 +16,6 @@ const envSchema = z.object({
     .string()
     .default("https://external.driv.in/api/external"),
   DRIVIN_API_KEY: z.string().optional(),
-  CLIENTES_TAT_URL: z
-    .string()
-    // Tokens en .env, nunca en código fuente
-    .default("https://apiconsulta.grupo-santacruz.com/clientes-tat"),
   // Token de apiconsulta (mismo que PRICE_LISTS_TOKEN de SIGCOM). Se envía como ?token=
   CLIENTES_TAT_TOKEN: z.string().optional(),
   TAT_INVOICES_URL: z

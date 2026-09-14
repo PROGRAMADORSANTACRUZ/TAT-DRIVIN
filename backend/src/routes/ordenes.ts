@@ -378,25 +378,18 @@ router.get("/", requireAuth, async (req, res, next) => {
     // ?all=true devuelve todas; por defecto solo activas (excluye Entregado/Rechazado)
     // para reducir payload en el cliente (el sistema solo necesita las activas)
     const todas = req.query.all === "true";
-    const [ordenes, clientesGS, clientesTat, tatConConsec] = await Promise.all([
+    const [ordenes, clientesGS] = await Promise.all([
       prisma.orden.findMany({
         where: todas ? undefined : { estado: { notIn: ["Entregado", "Rechazado"] } },
         orderBy: [{ cliente: "asc" }, { destino: "asc" }, { numeroOrden: "asc" }],
       }),
+      // Cliente es ahora la única fuente de verdad (Distribución + TAT unificados).
       prisma.cliente.findMany({
-        select: { cliente: true, direccion: true, codigoDireccion: true, consecutivos: true },
-      }),
-      prisma.clienteTat.findMany({
-        where: { eliminado: false, editado: true, nit: { not: null } },
-        select: { nit: true, sucursal: true, direccion1: true, razonSocial: true },
-      }),
-      prisma.clienteTat.findMany({
-        where: { eliminado: false, consecutivos: { not: null } },
-        select: { codigoTercero: true, razonSocial: true, direccion1: true, consecutivos: true },
+        select: { cliente: true, nombreDireccion: true, direccion: true, codigoDireccion: true, consecutivos: true, tipo: true },
       }),
     ]);
 
-    // Datos actuales del maestro GS por consecutivo y por código (fuente de verdad editable).
+    // Datos actuales del maestro (GS + TAT) por consecutivo y por código (fuente de verdad editable).
     type MaestroInfo = { nombre?: string; direccion?: string; codigo?: string };
     const gsPorConsecutivo = new Map<string, MaestroInfo>();
     const gsPorCodigo = new Map<string, MaestroInfo>();
@@ -413,7 +406,7 @@ router.get("/", requireAuth, async (req, res, next) => {
     };
     for (const c of clientesGS) {
       const dir = (c.direccion ?? "").trim();
-      const nombre = (c.cliente ?? "").trim();
+      const nombre = (c.cliente ?? c.nombreDireccion ?? "").trim();
       const info: MaestroInfo = {};
       if (dir) info.direccion = dir;
       if (nombre) info.nombre = nombre;
@@ -432,29 +425,17 @@ router.get("/", requireAuth, async (req, res, next) => {
         } catch { /* consecutivos inválidos */ }
       }
     }
-    for (const c of tatConConsec) {
-      const info: MaestroInfo = {};
-      const dir = (c.direccion1 ?? "").trim();
-      const nombre = (c.razonSocial ?? "").trim();
-      if (dir.length >= 2 && !NO_DIRECCION_TAT.has(dir.toUpperCase())) info.direccion = dir;
-      if (nombre) info.nombre = nombre;
-      if (c.codigoTercero) info.codigo = c.codigoTercero.trim();
-      indexarConcatNit(c.consecutivos, info);
-    }
-    // Datos del maestro TAT (solo clientes editados) por NIT-sucursal.
+    // Datos del maestro TAT (mismo Cliente, tipo="TAT") por NIT-sucursal (= codigoDireccion).
     const tatPorClave = new Map<string, MaestroInfo>();
-    for (const c of clientesTat) {
-      const nit = String(c.nit ?? "").trim();
-      if (!nit) continue;
-      const dir = (c.direccion1 ?? "").trim();
-      const nombre = (c.razonSocial ?? "").trim();
+    for (const c of clientesGS) {
+      if (c.tipo !== "TAT" || !c.codigoDireccion) continue;
+      const dir = (c.direccion ?? "").trim();
+      const nombre = (c.cliente ?? c.nombreDireccion ?? "").trim();
       const info: MaestroInfo = {};
       if (dir.length >= 2 && !NO_DIRECCION_TAT.has(dir.toUpperCase())) info.direccion = dir;
       if (nombre) info.nombre = nombre;
       if (!info.direccion && !info.nombre) continue;
-      const suc = parseInt(String(c.sucursal ?? "").trim(), 10);
-      const key = Number.isFinite(suc) ? `${nit}-${suc}` : nit;
-      if (!tatPorClave.has(key)) tatPorClave.set(key, info);
+      tatPorClave.set(c.codigoDireccion.trim(), info);
     }
 
     // Sobrescribe (solo para la vista) el cliente por concatenado y refresca la dirección.
@@ -611,26 +592,11 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
         select: { codigoDireccion: true, cliente: true, nombreDireccion: true, direccion: true, comuna: true, provincia: true, lat: true, lon: true, consecutivos: true },
       }),
     ]);
-    // Clientes TAT con concatenados (código = codigoTercero).
-    const clientesTat = await prisma.clienteTat.findMany({
-      where: { eliminado: false, consecutivos: { not: null } },
-      select: { codigoTercero: true, razonSocial: true, consecutivos: true },
-    });
-    // Clientes TAT indexados por NIT + sucursal: cada sucursal es un cliente distinto.
-    const clientesTatNit = await prisma.clienteTat.findMany({
-      where: { eliminado: false, nit: { not: null } },
-      select: { nit: true, codigoTercero: true, sucursal: true },
-    });
-    // Clave = NIT-<entero de sucursal> (y NIT puro como respaldo para órdenes sin sucursal).
-    const porNit = new Map<string, string | null>();
-    for (const c of clientesTatNit) {
-      const nit = String(c.nit ?? "").trim();
-      if (!nit) continue;
-      const suc = parseInt(String(c.sucursal ?? "").trim(), 10);
-      const key = Number.isFinite(suc) ? `${nit}-${suc}` : nit;
-      if (!porNit.has(key)) porNit.set(key, c.codigoTercero);
-      if (!porNit.has(nit)) porNit.set(nit, c.codigoTercero);
-    }
+    // Códigos ya conocidos en el maestro (Cliente cubre GS + TAT unificados):
+    // para TAT, codigoDireccion YA es el NIT-sucursal, no hace falta tabla aparte.
+    const codigosConocidos = new Set(
+      clientesGS.map((c) => claveCliente(c.codigoDireccion ?? "")).filter(Boolean)
+    );
 
     // Incluye el maestro GS como direcciones: así un cliente que existe en nuestra
     // BD (con su código) resuelve aunque Drivin no lo tenga registrado.
@@ -669,24 +635,7 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
         }
       }
     }
-    for (const c of clientesTat) {
-      if (!c.consecutivos) continue;
-      let lista: string[] = [];
-      try {
-        lista = JSON.parse(c.consecutivos) as string[];
-      } catch {
-        lista = [];
-      }
-      for (const con of lista) {
-        const k = claveCliente(con);
-        if (!k) continue;
-        if (esConcatNit(k)) {
-          if (!porNitConcat.has(k)) porNitConcat.set(k, { code: c.codigoTercero, nombre: c.razonSocial });
-        } else if (!porConsecutivo.has(k)) {
-          porConsecutivo.set(k, c.codigoTercero);
-        }
-      }
-    }
+
 
     // Agrupa por par cliente||destino.
     const grupos = new Map<
@@ -729,9 +678,10 @@ router.get("/verificar-clientes", requireAuth, async (_req, res, next) => {
       const consecutivo = claveCliente(`${g.cliente} - ${g.destino}`);
       // Ruteo explícito por NIT-concatenado (manda sobre el registro propio del TAT).
       const rut = g.nit ? porNitConcat.get(claveCliente(g.nit)) : undefined;
-      // Los TAT se identifican por NIT-sucursal (g.codigo); los demás por consecutivo o dirección.
+      // Los TAT se identifican por NIT-sucursal (g.codigo), que ya ES el
+      // codigoDireccion del Cliente unificado: basta con verificar que exista.
       const claveTat = g.codigo ?? g.nit ?? "";
-      const codigoNit = claveTat ? porNit.get(claveTat) : undefined;
+      const codigoNit = claveTat && codigosConocidos.has(claveCliente(claveTat)) ? claveTat : undefined;
       const codigoManual =
         codigoNit ??
         porConsecutivo.get(consecutivo) ??
@@ -792,17 +742,9 @@ async function construirResolverCodigo(): Promise<{
   } catch {
     driviOk = false;
   }
-  const [clientesGS, clientesTat, clientesTatNit] = await Promise.all([
-    prisma.cliente.findMany({ select: { codigoDireccion: true, cliente: true, nombreDireccion: true, direccion: true, comuna: true, provincia: true, lat: true, lon: true, consecutivos: true } }),
-    prisma.clienteTat.findMany({
-      where: { eliminado: false, consecutivos: { not: null } },
-      select: { codigoTercero: true, consecutivos: true },
-    }),
-    prisma.clienteTat.findMany({
-      where: { eliminado: false, nit: { not: null } },
-      select: { nit: true, codigoTercero: true, sucursal: true },
-    }),
-  ]);
+  const clientesGS = await prisma.cliente.findMany({
+    select: { codigoDireccion: true, cliente: true, nombreDireccion: true, direccion: true, comuna: true, provincia: true, lat: true, lon: true, consecutivos: true },
+  });
 
   // Incluye el maestro GS como direcciones (resuelve clientes de nuestra BD
   // aunque Drivin no los tenga registrados).
@@ -819,15 +761,11 @@ async function construirResolverCodigo(): Promise<{
     }));
   const index = buildAddressIndex([...addresses, ...gsAddresses]);
 
-  const porNit = new Map<string, string | null>();
-  for (const c of clientesTatNit) {
-    const nit = String(c.nit ?? "").trim();
-    if (!nit) continue;
-    const suc = parseInt(String(c.sucursal ?? "").trim(), 10);
-    const key = Number.isFinite(suc) ? `${nit}-${suc}` : nit;
-    if (!porNit.has(key)) porNit.set(key, c.codigoTercero);
-    if (!porNit.has(nit)) porNit.set(nit, c.codigoTercero);
-  }
+  // Códigos ya conocidos en el maestro (Cliente cubre GS + TAT unificados): para
+  // TAT, codigoDireccion YA es el NIT-sucursal, no hace falta tabla aparte.
+  const codigosConocidos = new Set(
+    clientesGS.map((c) => claveCliente(c.codigoDireccion ?? "")).filter(Boolean)
+  );
 
   const porConsecutivo = new Map<string, string | null>();
   const porNitConcat = new Map<string, string | null>();
@@ -850,13 +788,12 @@ async function construirResolverCodigo(): Promise<{
     }
   };
   for (const c of clientesGS) indexar(c.consecutivos, c.codigoDireccion);
-  for (const c of clientesTat) indexar(c.consecutivos, c.codigoTercero);
 
   const resolver = (cliente: string, destino: string, nit: string | null, codigo: string | null) => {
     const rut = nit ? porNitConcat.get(claveCliente(nit)) : undefined;
     if (rut !== undefined) return { code: rut };
     const claveTat = codigo ?? nit ?? "";
-    const codigoNit = claveTat ? porNit.get(claveTat) : undefined;
+    const codigoNit = claveTat && codigosConocidos.has(claveCliente(claveTat)) ? claveTat : undefined;
     if (codigoNit !== undefined) return { code: codigoNit };
     const consecutivo = claveCliente(`${cliente} - ${destino}`);
     const codigoManual =
@@ -1281,30 +1218,30 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
     const numeroOrden = String(filas[0].nro_documento ?? documento).trim();
 
     // Dirección/vendedor del maestro TAT por NIT (fallback si la factura no la
-    // trae). Un mismo NIT puede tener varias sucursales/direcciones: si hay más
-    // de una coincidencia, se elige la de mayor coincidencia con la dirección
-    // que trae la factura (solape de palabras); si no hay ninguna pista, se usa
-    // la primera para no romper el flujo.
+    // trae). El código del Cliente unificado es "NIT-sucursal": un mismo NIT
+    // puede tener varias sucursales/direcciones; si hay más de una coincidencia,
+    // se elige la de mayor coincidencia con la dirección que trae la factura
+    // (solape de palabras); si no hay ninguna pista, se usa la primera.
     const candidatosTat = nit
-      ? await prisma.clienteTat.findMany({
-          where: { nit, eliminado: false },
-          select: { direccion1: true, vendedor: true },
+      ? await prisma.cliente.findMany({
+          where: { tipo: "TAT", OR: [{ codigoDireccion: nit }, { codigoDireccion: { startsWith: `${nit}-` } }] },
+          select: { direccion: true, vendedor: true },
         })
       : [];
     const dirInv = String(filas[0].direccion_sucursal ?? "").trim();
-    let clienteTat: { direccion1: string | null; vendedor: string | null } | null = null;
+    let clienteTat: { direccion: string | null; vendedor: string | null } | null = null;
     if (candidatosTat.length === 1) {
       clienteTat = candidatosTat[0];
     } else if (candidatosTat.length > 1) {
       let mejor = candidatosTat[0];
       let mejorScore = -1;
       for (const c of candidatosTat) {
-        const score = similitudDireccion(dirInv, c.direccion1 ?? "");
+        const score = similitudDireccion(dirInv, c.direccion ?? "");
         if (score > mejorScore) { mejorScore = score; mejor = c; }
       }
       clienteTat = mejor;
     }
-    const dirMaestro = (clienteTat?.direccion1 ?? "").trim();
+    const dirMaestro = (clienteTat?.direccion ?? "").trim();
 
     // Preserva el vehículo y la ruta si esta factura ya estaba cargada.
     const previa = await prisma.orden.findFirst({

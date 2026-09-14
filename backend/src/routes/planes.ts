@@ -72,12 +72,6 @@ function esConcatNit(k: string): boolean {
   return /^\d{5,}(?:-\d+)?$/.test(k);
 }
 
-// Identidad de cliente TAT por sucursal: NIT-<entero>.
-function claveNitSucursal(nit: string, sucursal: string | null): string {
-  const suc = parseInt(String(sucursal ?? "").trim(), 10);
-  return Number.isFinite(suc) ? `${nit}-${suc}` : nit;
-}
-
 // Construye el payload del escenario a partir de las órdenes asignadas en BD.
 export async function buildScenarioPayload(opts: {
   descripcion: string;
@@ -104,31 +98,20 @@ export async function buildScenarioPayload(opts: {
   }
 
   const clientesGS = await prisma.cliente.findMany();
-  const clientesTat = await prisma.clienteTat.findMany({
-    where: { eliminado: false },
-    select: {
-      codigoTercero: true, nit: true, sucursal: true, razonSocial: true,
-      direccion1: true, ciudad: true, departamento: true, pais: true,
-      lat: true, lon: true, consecutivos: true,
-      referencia: true, telefono: true, celular: true, correo: true, vendedor: true,
-    },
-  });
 
-  // Índice de contacto TAT por código (NIT-sucursal): referencia y contacto.
+  // Índice de contacto TAT por código (NIT-sucursal = codigoDireccion): referencia y contacto.
   const tatInfoPorCodigo = new Map<
     string,
     { referencia: string | null; telefono: string | null; correo: string | null; ciudad: string | null; departamento: string | null; vendedor: string | null }
   >();
-  for (const c of clientesTat) {
-    if (!c.nit) continue;
-    const cod = claveNitSucursal(c.nit, c.sucursal);
-    if (tatInfoPorCodigo.has(cod)) continue;
-    tatInfoPorCodigo.set(cod, {
+  for (const c of clientesGS) {
+    if (c.tipo !== "TAT" || !c.codigoDireccion) continue;
+    tatInfoPorCodigo.set(c.codigoDireccion, {
       referencia: c.referencia ?? null,
-      telefono: c.telefono ?? c.celular ?? null,
+      telefono: c.telefono ?? null,
       correo: c.correo ?? null,
-      ciudad: c.ciudad ?? null,
-      departamento: c.departamento ?? null,
+      ciudad: c.provincia ?? null,
+      departamento: c.region ?? null,
       vendedor: c.vendedor ?? null,
     });
   }
@@ -221,22 +204,6 @@ export async function buildScenarioPayload(opts: {
       telefono: c.telefono ?? null,
       correo: c.correo ?? null,
       departamento: c.region ?? c.provincia ?? null,
-      vendedor: c.vendedor ?? null,
-    });
-  }
-  for (const c of clientesTat) {
-    indexarConcat(c.consecutivos, {
-      nombre: c.razonSocial ?? undefined,
-      direccion: c.direccion1 ?? undefined,
-      codigo: c.nit ? claveNitSucursal(c.nit, c.sucursal) : (c.codigoTercero ?? undefined),
-      ciudad: c.ciudad ?? c.departamento ?? null,
-      pais: c.pais,
-      lat: c.lat,
-      lng: c.lon,
-      referencia: c.referencia ?? null,
-      telefono: c.telefono ?? c.celular ?? null,
-      correo: c.correo ?? null,
-      departamento: c.departamento ?? null,
       vendedor: c.vendedor ?? null,
     });
   }

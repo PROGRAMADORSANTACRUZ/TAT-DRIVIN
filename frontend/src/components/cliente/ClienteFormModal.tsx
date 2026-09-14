@@ -4,11 +4,8 @@ import { useEffect, useState } from "react";
 import {
   ApiError,
   crearCliente,
-  deleteClienteTat,
   updateCliente,
-  updateClienteTat,
   type Cliente,
-  type ClienteTat,
 } from "@/lib/api";
 import { tc, tcVivo } from "@/lib/utils";
 import DireccionInput from "./DireccionInput";
@@ -78,33 +75,9 @@ function fromGS(c: Cliente): Form {
   };
 }
 
-function fromTat(c: ClienteTat): Form {
-  return {
-    codigo: c.codigoTercero ?? "",
-    nombre: c.razonSocial ?? "",
-    direccion: c.direccion1 ?? "",
-    referencia: c.referencia ?? "",
-    barrio: c.barrio ?? "",
-    manzana: c.manzana ?? "",
-    lote: c.lote ?? "",
-    tipoVia: c.tipoVia ?? "",
-    ciudad: c.ciudad ?? "",
-    departamento: c.departamento ?? "",
-    telefono: c.telefono ?? c.celular ?? "",
-    correo: c.correo ?? "",
-    puntoVenta: c.puntoVenta ?? "",
-    tipo: (c.tipo as Form["tipo"]) || "TAT",
-    vendedor: c.vendedor ?? "",
-    activo: true,
-    lat: numOrNull(c.lat),
-    lng: numOrNull(c.lon),
-  };
-}
-
 export default function ClienteFormModal({
   modo,
   gs,
-  tat,
   nombreInicial = "",
   consecutivoInicial,
   direccionInicial = "",
@@ -113,11 +86,9 @@ export default function ClienteFormModal({
   vendedorInicial = "",
   onClose,
   onSaved,
-  onDeleted,
 }: {
-  modo: "crear" | "editarGS" | "editarTAT";
+  modo: "crear" | "editarGS";
   gs?: Cliente;
-  tat?: ClienteTat;
   nombreInicial?: string;
   consecutivoInicial?: string;
   direccionInicial?: string;
@@ -125,12 +96,10 @@ export default function ClienteFormModal({
   tipoInicial?: "TAT" | "Distribución";
   vendedorInicial?: string;
   onClose: () => void;
-  onSaved: (cliente: Cliente | ClienteTat) => void;
-  onDeleted?: () => void;
+  onSaved: (cliente: Cliente) => void;
 }) {
   const [form, setForm] = useState<Form>(() => {
     if (modo === "editarGS" && gs) return fromGS(gs);
-    if (modo === "editarTAT" && tat) return fromTat(tat);
     return {
       ...VACIO,
       nombre: nombreInicial ? tc(nombreInicial) : "",
@@ -144,7 +113,7 @@ export default function ClienteFormModal({
   const [error, setError] = useState<string | null>(null);
 
   // Concatenados (consecutivos "cliente - destino") editables a mano.
-  const [concatenados, setConcatenados] = useState<string[]>(gs?.consecutivos ?? tat?.consecutivos ?? []);
+  const [concatenados, setConcatenados] = useState<string[]>(gs?.consecutivos ?? []);
   const [nuevoConcat, setNuevoConcat] = useState("");
   function agregarConcat() {
     const v = nuevoConcat.trim();
@@ -173,68 +142,36 @@ export default function ClienteFormModal({
     try {
       const latStr = form.lat != null ? String(form.lat) : null;
       const lngStr = form.lng != null ? String(form.lng) : null;
-      if (modo === "editarTAT" && tat) {
-        const guardado = await updateClienteTat(tat.id, {
-          codigoTercero: tat.codigoTercero,
-          nit: tat.nit,
-          razonSocial: form.nombre.trim(),
-          sucursal: tat.sucursal,
-          descripcionSucursal: tat.descripcionSucursal,
-          direccion1: form.direccion.trim() || null,
-          barrio: form.barrio.trim() || null,
-          manzana: form.manzana.trim() || null,
-          lote: form.lote.trim() || null,
-          tipoVia: form.tipoVia.trim() || null,
-          ciudad: form.ciudad.trim() || null,
-          departamento: form.departamento.trim() || null,
-          pais: tat.pais,
-          telefono: form.telefono.trim() || null,
-          celular: tat.celular,
-          correo: form.correo.trim() || null,
-          idVendedor: tat.idVendedor,
-          vendedor: form.vendedor.trim() || null,
-          idCriterio: tat.idCriterio,
-          criterio: tat.criterio,
-          referencia: form.referencia.trim() || null,
-          lat: latStr,
-          lon: lngStr,
-          puntoVenta: form.puntoVenta.trim() || null,
-          tipo: form.tipo,
-          consecutivos: concatenados,
-        });
+      const payload = {
+        codigoDireccion: form.codigo.trim() || null,
+        cliente: form.nombre.trim(),
+        direccion: form.direccion.trim() || null,
+        referencia: form.referencia.trim() || null,
+        comuna: form.ciudad.trim() || null,
+        provincia: form.departamento.trim() || null,
+        barrio: form.barrio.trim() || null,
+        manzana: form.manzana.trim() || null,
+        lote: form.lote.trim() || null,
+        tipoVia: form.tipoVia.trim() || null,
+        telefono: form.telefono.trim() || null,
+        correo: form.correo.trim() || null,
+        puntoVenta: form.puntoVenta.trim() || null,
+        tipo: form.tipo,
+        vendedor: form.vendedor.trim() || null,
+        activo: form.activo,
+        pais: "Colombia",
+        lat: latStr,
+        lon: lngStr,
+      };
+      if (modo === "editarGS" && gs) {
+        const guardado = await updateCliente(gs.id, { ...payload, consecutivos: concatenados });
         onSaved(guardado);
       } else {
-        const payload = {
-          codigoDireccion: form.codigo.trim() || null,
-          cliente: form.nombre.trim(),
-          direccion: form.direccion.trim() || null,
-          referencia: form.referencia.trim() || null,
-          comuna: form.ciudad.trim() || null,
-          provincia: form.departamento.trim() || null,
-          barrio: form.barrio.trim() || null,
-          manzana: form.manzana.trim() || null,
-          lote: form.lote.trim() || null,
-          tipoVia: form.tipoVia.trim() || null,
-          telefono: form.telefono.trim() || null,
-          correo: form.correo.trim() || null,
-          puntoVenta: form.puntoVenta.trim() || null,
-          tipo: form.tipo,
-          vendedor: form.vendedor.trim() || null,
-          activo: form.activo,
-          pais: "Colombia",
-          lat: latStr,
-          lon: lngStr,
-        };
-        if (modo === "editarGS" && gs) {
-          const guardado = await updateCliente(gs.id, { ...payload, consecutivos: concatenados });
-          onSaved(guardado);
-        } else {
-          const guardado = await crearCliente({
-            ...payload,
-            consecutivos: [...new Set([...(consecutivoInicial ? [consecutivoInicial] : []), ...concatenados])],
-          });
-          onSaved(guardado);
-        }
+        const guardado = await crearCliente({
+          ...payload,
+          consecutivos: [...new Set([...(consecutivoInicial ? [consecutivoInicial] : []), ...concatenados])],
+        });
+        onSaved(guardado);
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo guardar el cliente");
@@ -244,20 +181,6 @@ export default function ClienteFormModal({
   }
 
   const titulo = modo === "crear" ? "Nuevo cliente" : "Editar cliente";
-
-  async function eliminar() {
-    if (!tat) return;
-    if (!window.confirm(`¿Eliminar a ${form.nombre || "este cliente"}? No reaparecerá al sincronizar.`)) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await deleteClienteTat(tat.id);
-      onDeleted?.();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudo eliminar");
-      setSaving(false);
-    }
-  }
 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-3">
@@ -440,11 +363,6 @@ export default function ClienteFormModal({
         </div>
 
         <div className="flex shrink-0 items-center justify-end gap-3 border-t border-[#eceef0] px-6 py-4">
-          {modo === "editarTAT" && onDeleted && (
-            <button onClick={eliminar} disabled={saving} className="mr-auto rounded-lg border border-[#dfe4e0] px-4 py-2.5 text-sm font-medium text-[#b3261e] hover:bg-[#fbeceb] disabled:opacity-50">
-              Eliminar
-            </button>
-          )}
           <button onClick={onClose} disabled={saving} className="rounded-lg border border-[#dfe4e0] px-4 py-2.5 text-sm font-medium text-[#45505e] hover:bg-[#f4f6f3] disabled:opacity-50">
             Cancelar
           </button>

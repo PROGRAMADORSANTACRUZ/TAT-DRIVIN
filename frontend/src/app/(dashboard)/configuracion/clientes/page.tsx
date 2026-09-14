@@ -7,71 +7,40 @@ import ClienteFormModal from "@/components/cliente/ClienteFormModal";
 import {
   ApiError,
   getClientes,
-  getClientesTat,
   importClientes,
   exportClientes,
   eliminarTodosClientes,
   type Cliente,
-  type ClienteTat,
 } from "@/lib/api";
 
-type Tipo = "GS" | "TAT";
-
-// Fila unificada que representa un cliente de cualquiera de las dos fuentes.
+// Fila para mostrar en la tabla (mapeada desde Cliente).
 type Row = {
   id: string;
-  tipo: Tipo;
   codigo: string | null;
   nombre: string | null;
   direccion: string | null;
   ciudad: string | null;
   departamento: string | null;
   pais: string | null;
-  gs?: Cliente;
-  tat?: ClienteTat;
+  cliente: Cliente;
 };
 
 function fromGS(c: Cliente): Row {
   return {
-    id: `gs-${c.id}`,
-    tipo: "GS",
+    id: c.id,
     codigo: c.codigoDireccion,
     nombre: c.cliente || c.nombreDireccion,
     direccion: c.direccion,
     ciudad: c.comuna,
     departamento: c.provincia,
     pais: c.pais,
-    gs: c,
+    cliente: c,
   };
 }
 
-function fromTat(c: ClienteTat): Row {
-  return {
-    id: `tat-${c.id}`,
-    tipo: "TAT",
-    codigo: codigoTatConSucursal(c),
-    nombre: c.razonSocial,
-    direccion: c.direccion1,
-    ciudad: c.ciudad,
-    departamento: c.departamento,
-    pais: c.pais,
-    tat: c,
-  };
-}
-
-// Código a mostrar para TAT: si el cliente tiene sucursal, se concatena como
-// "codigo-sucursal" (misma identidad NIT-sucursal que se envía a Drivin).
-function codigoTatConSucursal(c: ClienteTat): string | null {
-  const base = c.codigoTercero ?? c.nit;
-  if (!base) return null;
-  const suc = parseInt(String(c.sucursal ?? "").trim(), 10);
-  return Number.isFinite(suc) ? `${base}-${suc}` : base;
-}
-
-// Etiqueta a mostrar: respeta el tipo marcado en el cliente GS (puede ser TAT).
+// Etiqueta a mostrar según el tipo del cliente.
 function badgeTipo(r: Row): "TAT" | "Distribución" {
-  if (r.tipo === "TAT") return "TAT";
-  return r.gs?.tipo === "TAT" ? "TAT" : "Distribución";
+  return r.cliente.tipo === "TAT" ? "TAT" : "Distribución";
 }
 
 const COLUMNS: { key: keyof Row; label: string }[] = [
@@ -85,7 +54,6 @@ const COLUMNS: { key: keyof Row; label: string }[] = [
 
 export default function ClientesPage() {
   const [clientesGS, setClientesGS] = useState<Cliente[]>([]);
-  const [clientesTat, setClientesTat] = useState<ClienteTat[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -95,17 +63,14 @@ export default function ClientesPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [tipoFiltro, setTipoFiltro] = useState<"" | Tipo>("");
+  const [tipoFiltro, setTipoFiltro] = useState<"" | "GS" | "TAT">("");
   const [editingGS, setEditingGS] = useState<Cliente | null>(null);
-  const [editingTat, setEditingTat] = useState<ClienteTat | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [gs, tat] = await Promise.all([getClientes(), getClientesTat()]);
-      setClientesGS(gs);
-      setClientesTat(tat);
+      setClientesGS(await getClientes());
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al cargar");
     }
@@ -173,10 +138,7 @@ export default function ClientesPage() {
     }
   }
 
-  const rows: Row[] = [
-    ...clientesGS.map(fromGS),
-    ...clientesTat.map(fromTat),
-  ];
+  const rows: Row[] = clientesGS.map(fromGS);
   const term = search.trim().toLowerCase();
   const filtered = rows.filter((r) => {
     if (tipoFiltro) {
@@ -278,7 +240,7 @@ export default function ClientesPage() {
         />
         <select
           value={tipoFiltro}
-          onChange={(e) => setTipoFiltro(e.target.value as "" | Tipo)}
+          onChange={(e) => setTipoFiltro(e.target.value as "" | "GS" | "TAT")}
           className="rounded-lg border border-[#dfe4e0] bg-white px-3 py-2.5 text-sm text-[#14352a] outline-none transition focus:border-[#2f8f4e] focus:ring-2 focus:ring-[#2f8f4e]/20"
         >
           <option value="">Todos los tipos</option>
@@ -315,9 +277,7 @@ export default function ClientesPage() {
                 {filtered.map((r) => (
                   <tr
                     key={r.id}
-                    onClick={() =>
-                      r.tipo === "GS" ? setEditingGS(r.gs!) : setEditingTat(r.tat!)
-                    }
+                    onClick={() => setEditingGS(r.cliente)}
                     className="cursor-pointer hover:bg-[#f9fbf7]"
                   >
                     <td className="px-3 py-3">
@@ -364,21 +324,6 @@ export default function ClientesPage() {
           onClose={() => setEditingGS(null)}
           onSaved={() => {
             setEditingGS(null);
-            load();
-          }}
-        />
-      )}
-      {editingTat && (
-        <ClienteFormModal
-          modo="editarTAT"
-          tat={editingTat}
-          onClose={() => setEditingTat(null)}
-          onSaved={() => {
-            setEditingTat(null);
-            load();
-          }}
-          onDeleted={() => {
-            setEditingTat(null);
             load();
           }}
         />

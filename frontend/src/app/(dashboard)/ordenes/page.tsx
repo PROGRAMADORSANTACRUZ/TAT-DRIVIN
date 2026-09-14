@@ -8,19 +8,16 @@ import FacturaScanModal from "@/components/ordenes/FacturaScanModal";
 import {
   ApiError,
   asignarConsecutivo,
-  asignarConsecutivoTat,
   asignarRutaOrdenes,
   cruzarConsecutivosAuto,
   deleteOrdenes,
   eliminarOrdenesPorIds,
   getClientes,
-  getClientesTat,
   getOrdenes,
   importOrdenes,
   verificarClientesOrdenes,
   type Cliente,
   type ClienteSinRegistrar,
-  type ClienteTat,
   type Orden,
   type VerificacionClientes,
 } from "@/lib/api";
@@ -297,9 +294,7 @@ export default function OrdenesPage() {
   const [verifModalOpen, setVerifModalOpen] = useState(false);
   const [buscarVerif, setBuscarVerif] = useState("");
   const [clientesDb, setClientesDb] = useState<Cliente[]>([]);
-  const [clientesTatDb, setClientesTatDb] = useState<ClienteTat[]>([]);
   const [editGsTarget, setEditGsTarget] = useState<Cliente | null>(null);
-  const [editTatTarget, setEditTatTarget] = useState<ClienteTat | null>(null);
   const [asignarTarget, setAsignarTarget] = useState<ClienteSinRegistrar | null>(null);
   const [crearTarget, setCrearTarget] = useState<ClienteSinRegistrar | null>(null);
   const [eliminarSinRegTarget, setEliminarSinRegTarget] = useState<ClienteSinRegistrar | null>(null);
@@ -318,9 +313,6 @@ export default function OrdenesPage() {
       getClientes()
         .then(setClientesDb)
         .catch(() => setClientesDb([]));
-      getClientesTat()
-        .then(setClientesTatDb)
-        .catch(() => setClientesTatDb([]));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al cargar");
     }
@@ -485,8 +477,7 @@ export default function OrdenesPage() {
         ? asignarTarget.nit
         : `${asignarTarget.cliente} - ${asignarTarget.destino}`;
     try {
-      if (tipo === "TAT") await asignarConsecutivoTat(clienteId, consecutivo);
-      else await asignarConsecutivo(clienteId, consecutivo);
+      await asignarConsecutivo(clienteId, consecutivo);
       setMessage(`Consecutivo asignado. Actualizando verificación…`);
       setAsignarTarget(null);
       await load();
@@ -498,13 +489,9 @@ export default function OrdenesPage() {
   // Abre el cliente existente para editar; si no está en la DB, ofrece crearlo.
   function abrirEditar(g: OrdenGrupo) {
     if (g.distribucion === "TAT") {
-      const found = clientesTatDb.find((c) => {
-        if (!c.nit) return false;
-        const suc = parseInt(String(c.sucursal ?? ""), 10);
-        const clave = Number.isFinite(suc) ? `${c.nit}-${suc}` : c.nit;
-        return clave === g.nit || c.nit === g.nit;
-      });
-      if (found) { setEditTatTarget(found); return; }
+      // El código TAT (Order.nit) YA es el NIT-sucursal = Cliente.codigoDireccion.
+      const found = clientesDb.find((c) => !!g.nit && c.codigoDireccion === g.nit);
+      if (found) { setEditGsTarget(found); return; }
     } else {
       // Busca el cliente GS por código resuelto, código de la orden o por nombre:
       // si existe, se abre en modo editar; si no, se ofrece crearlo.
@@ -1504,7 +1491,6 @@ export default function OrdenesPage() {
         <AsignarClienteModal
           target={asignarTarget}
           clientes={clientesDb}
-          clientesTat={clientesTatDb}
           onClose={() => setAsignarTarget(null)}
           onAsignar={handleAsignar}
         />
@@ -1551,23 +1537,6 @@ export default function OrdenesPage() {
           onSaved={() => {
             setEditGsTarget(null);
             setMessage("Cliente actualizado.");
-            load();
-          }}
-        />
-      )}
-
-      {editTatTarget && (
-        <ClienteFormModal
-          modo="editarTAT"
-          tat={editTatTarget}
-          onClose={() => setEditTatTarget(null)}
-          onSaved={() => {
-            setEditTatTarget(null);
-            setMessage("Cliente actualizado.");
-            load();
-          }}
-          onDeleted={() => {
-            setEditTatTarget(null);
             load();
           }}
         />
@@ -1729,47 +1698,26 @@ type ClienteAsignable = {
 function AsignarClienteModal({
   target,
   clientes,
-  clientesTat,
   onClose,
   onAsignar,
 }: {
   target: ClienteSinRegistrar;
   clientes: Cliente[];
-  clientesTat: ClienteTat[];
   onClose: () => void;
   onAsignar: (tipo: "GS" | "TAT", clienteId: string) => Promise<void>;
 }) {
   const [buscar, setBuscar] = useState("");
   const [asignandoId, setAsignandoId] = useState<string | null>(null);
 
-  // Lista unificada: todos los clientes GS (Distribución) + TAT.
-  const todos: ClienteAsignable[] = [
-    ...clientes.map((c) => ({
-      key: `gs-${c.id}`,
-      id: c.id,
-      tipo: "GS" as const,
-      nombre: c.cliente || c.nombreDireccion || "—",
-      direccion: c.direccion || c.nombreDireccion || "",
-      codigo: c.codigoDireccion,
-    })),
-    ...clientesTat.map((c) => {
-      const suc = parseInt(String(c.sucursal ?? ""), 10);
-      const base = c.codigoTercero ?? c.nit;
-      const codigo = base
-        ? Number.isFinite(suc)
-          ? `${base}-${suc}`
-          : base
-        : null;
-      return {
-        key: `tat-${c.id}`,
-        id: c.id,
-        tipo: "TAT" as const,
-        nombre: c.razonSocial || "—",
-        direccion: c.direccion1 || "",
-        codigo,
-      };
-    }),
-  ];
+  // Cliente ya unifica Distribución + TAT (campo tipo distingue el origen).
+  const todos: ClienteAsignable[] = clientes.map((c) => ({
+    key: c.id,
+    id: c.id,
+    tipo: c.tipo === "TAT" ? "TAT" : "GS",
+    nombre: c.cliente || c.nombreDireccion || "—",
+    direccion: c.direccion || c.nombreDireccion || "",
+    codigo: c.codigoDireccion,
+  }));
 
   const t = buscar.trim().toLowerCase();
   const filtrados = t

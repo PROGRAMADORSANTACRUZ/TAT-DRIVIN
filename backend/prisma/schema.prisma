@@ -146,51 +146,16 @@ model Cliente {
   puntoVenta      String?
   tipo            String?  // "TAT" | "Distribución"
   vendedor        String?  // Vendedor configurado para este cliente (fallback a Drivin)
+  // JSON: resto de columnas del export de Drivin sin campo dedicado (Nombre de
+  // Esquema, ventanas horarias, contactos secundarios, etc.), keyed por nombre
+  // exacto de columna. Permite exportar/importar el archivo de Drivin completo
+  // sin perder información en el ciclo Distrilog <-> Drivin.
+  extraDrivin     String?
   activo          Boolean  @default(true)
   consecutivos    String?  // JSON: lista de consecutivos/concatenados que mapean a este cliente
   createdAt       DateTime @default(now())
 
   @@index([cliente])
-}
-
-// Cliente TAT sincronizado desde la API de Grupo Santacruz.
-model ClienteTat {
-  id                  String   @id @default(cuid())
-  codigoTercero       String?
-  nit                 String?
-  razonSocial         String?
-  sucursal            String?
-  descripcionSucursal String?
-  direccion1          String?
-  barrio              String?
-  manzana             String?
-  lote                String?
-  tipoVia             String?
-  ciudad              String?
-  departamento        String?
-  pais                String?
-  telefono            String?
-  celular             String?
-  correo              String?
-  idVendedor          String?
-  vendedor            String?
-  idCriterio          String?
-  criterio            String?
-  referencia          String?
-  lat                 String?
-  lon                 String?
-  puntoVenta          String?
-  tipo                String?  // "TAT" | "Distribución"
-  consecutivos        String?  // JSON: concatenados que mapean a este cliente
-  editado             Boolean  @default(false)
-  editadoAt           DateTime?
-  eliminado           Boolean  @default(false)
-  eliminadoAt         DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @default(now()) @updatedAt
-
-  @@index([razonSocial])
-  @@index([codigoTercero])
 }
 
 // Planilla de despacho: dato de las remisiones/facturas con las que sale un
