@@ -423,6 +423,9 @@ export interface Cliente {
   puntoVenta: string | null;
   tipo: string | null;
   vendedor: string | null;
+  // JSON con columnas de Drivin sin campo propio (Nombre de Esquema, ventanas
+  // horarias, etc.); no se edita desde la app, solo viaja en import/export.
+  extraDrivin: string | null;
   activo: boolean;
   consecutivos: string[];
   createdAt: string;

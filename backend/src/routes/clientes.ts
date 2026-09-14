@@ -134,6 +134,28 @@ const EXTRA_HEADERS: Record<(typeof CAMPOS_EXTRA)[number], string> = {
   vendedor: "Vendedor",
 };
 
+// Encabezados EXACTOS (mismo texto y mismo orden) del Excel "Direcciones" que
+// exporta Drivin. Se usan para que el export de Clientes se pueda subir tal
+// cual a Drivin, sin tener que agregar a mano las columnas que Distrilog no
+// usa (quedan presentes aunque vayan vacías o con lo que traiga extraDrivin).
+const CAMPOS_DRIVIN_COMPLETO: string[] = [
+  "Código de Dirección", "Nombre de Dirección", "Cliente", "Tipo de Dirección", "Dirección",
+  "Referencia", "Descripción", "Comuna", "Provincia", "Región", "País", "Código Postal", "Lat", "Lon",
+  "Nombre de Esquema", "Tiempo de Servicio", "Inicio vt", "Fin vt", "Características de la Dirección",
+  "Vehículo asignado", "Teléfono", "Correo", "Exclusivo", "Inicio vt 2", "Fin vt 2", "Comentario",
+  "Código Cliente", "Nombre Contacto", "Correo al aprobar ruta", "Correo al iniciar ruta",
+  "Correo en camino a dirección", "Correo de entrega finalizada", "Etiqueta Costos",
+  "Código Zona de Venta", "Nombre Zona de Venta", "Código Proveedor", "Nombre Proveedor",
+  "Fecha Entrega", "Tiempo entre entregas", "Días de la semana disponibles", "Días de procesamiento",
+  "Días de entrega post procesamiento", "Constante días de entrega", "Código Empresa de Transporte",
+  "Empresa de Transporte", "Prioridad", "Prioridad de Secuencia", "Umbral de parada conocida",
+  "Evitar Telescopeo", "Nombre 2do Contacto", "Teléfono 2do Contacto", "Correo 2do Contacto",
+  "Ventanas Horarias por Día", "Frecuencia", "Código Esquema Empleador", "Tags de búsqueda",
+  "Nombre contacto ruta aprobada", "Nombre contacto inicio de ruta", "Nombre contacto próximo a llegar",
+  "Nombre contacto dirección cerrada", "Solicitar activos retornables", "Zonas", "Lat sugerida",
+  "Long sugerida", "Sugerencia", "Fecha de sugerencia",
+];
+
 interface ClienteRow {
   codigoDireccion: string;
   nombreDireccion: string;
@@ -159,6 +181,8 @@ interface ClienteRow {
   puntoVenta?: string;
   tipo?: string;
   vendedor?: string;
+  // JSON con el resto de columnas de Drivin sin campo propio (por encabezado exacto).
+  extraDrivin?: string;
 }
 
 // Alias de encabezados aceptados por columna (tolerante a mayúsculas/tildes).
@@ -214,7 +238,8 @@ function parseClientes(buffer: Buffer): { rows: ClienteRow[]; presentes: Set<str
   });
   if (rows.length < 2) return { rows: [], presentes: new Set() };
 
-  const header = rows[0].map(norm);
+  const headerRaw = rows[0].map((h) => String(h ?? "").trim());
+  const header = headerRaw.map(norm);
   const idx: Record<string, number> = {};
   for (const key of Object.keys(ALIASES)) {
     const aliases = ALIASES[key].map(norm);
@@ -222,6 +247,16 @@ function parseClientes(buffer: Buffer): { rows: ClienteRow[]; presentes: Set<str
   }
   // Columnas que sí vienen en este Excel (para no tocar en la BD las que no traiga).
   const presentes = new Set(Object.keys(idx).filter((k) => idx[k] >= 0));
+
+  // Columnas del Excel que no calzan con ningún campo propio (p. ej. las de
+  // Drivin sin campo dedicado, como "Nombre de Esquema" o "Ventanas Horarias
+  // por Día"): se guardan tal cual, por encabezado exacto, en extraDrivin para
+  // no perder nada al reimportar el archivo completo en Drivin.
+  const columnasReconocidas = new Set(Object.values(idx).filter((i) => i >= 0));
+  const columnasExtra = headerRaw
+    .map((h, i) => ({ h, i }))
+    .filter(({ h, i }) => h && !columnasReconocidas.has(i));
+  const hayExtra = columnasExtra.length > 0;
 
   const pick = (r: unknown[], i: number, key: string) => {
     const v = i >= 0 ? String(r[i] ?? "").trim() : "";
@@ -239,10 +274,18 @@ function parseClientes(buffer: Buffer): { rows: ClienteRow[]; presentes: Set<str
       const v = pick(r, idx[key], key);
       if (v) row[key] = v;
     }
+    if (hayExtra) {
+      const extra: Record<string, string> = {};
+      for (const { h, i: ci } of columnasExtra) {
+        const v = String(r[ci] ?? "").trim();
+        if (v) extra[h] = v;
+      }
+      if (Object.keys(extra).length > 0) row.extraDrivin = JSON.stringify(extra);
+    }
     if (!row.codigoDireccion && !row.nombreDireccion && !row.cliente) continue;
     out.push(row);
   }
-  return { rows: out, presentes };
+  return { rows: out, presentes: hayExtra ? new Set([...presentes, "extraDrivin"]) : presentes };
 }
 
 // Normaliza para COMPARAR contenido: ignora mayúsculas/minúsculas, tildes y
@@ -262,6 +305,7 @@ function comparable(v: string | null | undefined): string {
 const CAMPOS_CONTENIDO = [
   ...CAMPOS.map((c) => c.key).filter((k) => k !== "codigoDireccion" && k !== "lat" && k !== "lon"),
   ...CAMPOS_EXTRA,
+  "extraDrivin",
 ] as const;
 
 // GET /api/clientes
@@ -421,6 +465,7 @@ router.post(
             const data: Record<string, string | null> = {};
             for (const { key } of CAMPOS) data[key] = f[key] || null;
             for (const key of CAMPOS_EXTRA) data[key] = f[key] || null;
+            data.extraDrivin = f.extraDrivin || null;
             await tx.cliente.create({ data: { ...data, consecutivos: JSON.stringify([]) } });
             creados++;
             continue;
@@ -462,22 +507,34 @@ router.post(
 );
 
 // GET /api/clientes/export  -> descarga TODOS los clientes (Distribución + TAT) en
-// un Excel editable con las mismas columnas que acepta el import.
+// un Excel con el formato COMPLETO de Drivin (mismas columnas y mismo orden que
+// su Excel de "Direcciones", incluidas las que Distrilog no usa) más, al final,
+// las columnas propias de Distrilog. Así el archivo se puede subir tal cual a
+// Drivin sin tener que agregarle columnas a mano.
+const CAMPO_POR_HEADER_DRIVIN = new Map(CAMPOS.map((c) => [c.header, c.key] as const));
 router.get("/export", requireAuth, async (_req, res, next) => {
   try {
     // Cliente ya es la única fuente de verdad (Distribución + TAT unificados).
     const clientes = await prisma.cliente.findMany({ orderBy: { cliente: "asc" } });
-    const headers = [
-      ...CAMPOS.map((c) => c.header),
-      ...CAMPOS_EXTRA.map((k) => EXTRA_HEADERS[k]),
-    ];
+    const camposPropios = CAMPOS_EXTRA.filter((k) => k !== "telefono" && k !== "correo");
+    const headers = [...CAMPOS_DRIVIN_COMPLETO, ...camposPropios.map((k) => EXTRA_HEADERS[k])];
     const rows: Record<string, string>[] = [];
 
     for (const c of clientes) {
       const src = c as Record<string, unknown>;
+      let extra: Record<string, string> = {};
+      if (c.extraDrivin) {
+        try { extra = JSON.parse(c.extraDrivin) as Record<string, string>; } catch { extra = {}; }
+      }
       const row: Record<string, string> = {};
-      for (const { key, header } of CAMPOS) row[header] = (src[key] as string | null) ?? "";
-      for (const key of CAMPOS_EXTRA) row[EXTRA_HEADERS[key]] = (src[key] as string | null) ?? "";
+      for (const header of CAMPOS_DRIVIN_COMPLETO) {
+        const campo = CAMPO_POR_HEADER_DRIVIN.get(header);
+        if (campo) row[header] = (src[campo] as string | null) ?? "";
+        else if (header === EXTRA_HEADERS.telefono) row[header] = (src.telefono as string | null) ?? "";
+        else if (header === EXTRA_HEADERS.correo) row[header] = (src.correo as string | null) ?? "";
+        else row[header] = extra[header] ?? "";
+      }
+      for (const key of camposPropios) row[EXTRA_HEADERS[key]] = (src[key] as string | null) ?? "";
       rows.push(row);
     }
 
