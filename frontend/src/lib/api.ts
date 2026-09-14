@@ -434,33 +434,23 @@ export function getClientes(): Promise<Cliente[]> {
 
 export type ClienteInput = Partial<Omit<Cliente, "id" | "createdAt">>;
 
-export function updateCliente(
-  id: string,
-  data: ClienteInput
-): Promise<Cliente & { drivin?: { ok: boolean; error?: string } }> {
-  return request(`/api/clientes/${id}`, {
+export function updateCliente(id: string, data: ClienteInput): Promise<Cliente> {
+  return request<Cliente>(`/api/clientes/${id}`, {
     method: "PUT",
     body: JSON.stringify(data),
   });
 }
 
-export function crearCliente(
-  data: ClienteInput
-): Promise<Cliente & { drivin?: { ok: boolean; error?: string } }> {
-  return request("/api/clientes", {
+export function crearCliente(data: ClienteInput): Promise<Cliente> {
+  return request<Cliente>("/api/clientes", {
     method: "POST",
     body: JSON.stringify(data),
   });
 }
 
-// Sube/actualiza en Drivin TODOS los clientes de Distribución con código.
-export function actualizarClientesDrivin(): Promise<{
-  total: number;
-  actualizados: number;
-  fallidos: number;
-  errores: { codigo: string; error: string }[];
-}> {
-  return request("/api/clientes/actualizar-drivin", { method: "POST" });
+// Elimina TODO el maestro de clientes (Distribución). Requiere rol administrador.
+export function eliminarTodosClientes(): Promise<{ eliminados: number }> {
+  return request("/api/clientes", { method: "DELETE" });
 }
 
 export function asignarConsecutivo(

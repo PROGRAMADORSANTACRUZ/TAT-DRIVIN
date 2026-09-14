@@ -10,7 +10,7 @@ import {
   getClientesTat,
   importClientes,
   exportClientes,
-  actualizarClientesDrivin,
+  eliminarTodosClientes,
   type Cliente,
   type ClienteTat,
 } from "@/lib/api";
@@ -89,7 +89,9 @@ export default function ClientesPage() {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [sincronizandoDrivin, setSincronizandoDrivin] = useState(false);
+  const [eliminandoTodo, setEliminandoTodo] = useState(false);
+  const [confirmarEliminarTodo, setConfirmarEliminarTodo] = useState(false);
+  const [textoConfirmacion, setTextoConfirmacion] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -154,20 +156,20 @@ export default function ClientesPage() {
     }
   }
 
-  async function handleActualizarDrivin() {
-    setSincronizandoDrivin(true);
+  async function handleEliminarTodo() {
+    setEliminandoTodo(true);
     setError(null);
     setMessage(null);
     try {
-      const r = await actualizarClientesDrivin();
-      setMessage(
-        `Drivin: ${r.actualizados} de ${r.total} clientes actualizados.` +
-          (r.fallidos ? ` ${r.fallidos} fallaron.` : "")
-      );
+      const r = await eliminarTodosClientes();
+      setMessage(`Se eliminaron ${r.eliminados} clientes de Distribución.`);
+      setConfirmarEliminarTodo(false);
+      setTextoConfirmacion("");
+      await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Error al actualizar en Drivin");
+      setError(err instanceof ApiError ? err.message : "Error al eliminar");
     } finally {
-      setSincronizandoDrivin(false);
+      setEliminandoTodo(false);
     }
   }
 
@@ -211,25 +213,14 @@ export default function ClientesPage() {
         />
         <div className="flex items-center gap-2">
           <button
-            onClick={handleActualizarDrivin}
-            disabled={sincronizandoDrivin}
-            className={btn}
-            title="Sube/actualiza en Drivin todos los clientes de Distribución con código"
+            onClick={() => setConfirmarEliminarTodo(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-[#f0c4c1] bg-white px-4 py-2.5 text-sm font-medium text-[#b3261e] transition-colors hover:bg-[#fbeceb]"
           >
-            {sincronizandoDrivin ? (
-              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.37 0 0 5.37 0 12h4Z" />
-              </svg>
-            ) : (
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 2v6h-6" />
-                <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-                <path d="M3 22v-6h6" />
-                <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-              </svg>
-            )}
-            {sincronizandoDrivin ? "Actualizando…" : "Actualizar clientes en Drivin"}
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+            </svg>
+            Eliminar toda la BD
           </button>
           <button
             onClick={handleExport}
@@ -391,6 +382,57 @@ export default function ClientesPage() {
             load();
           }}
         />
+      )}
+
+      {confirmarEliminarTodo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+            <div className="border-b border-[#eceef0] px-6 py-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fbeceb] text-[#b3261e]">
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                </span>
+                <div>
+                  <h3 className="text-base font-semibold text-[#14352a]">Eliminar toda la base de clientes</h3>
+                  <p className="text-sm text-[#5f7a68]">Esta acción no se puede deshacer</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-5">
+              <p className="mb-3 text-sm text-[#45505e]">
+                Se eliminarán <strong>todos</strong> los clientes de Distribución ({clientesGS.length} registros).
+                Los clientes TAT no se ven afectados. Para confirmar, escribe <strong>ELIMINAR</strong> abajo.
+              </p>
+              <input
+                autoFocus
+                value={textoConfirmacion}
+                onChange={(e) => setTextoConfirmacion(e.target.value)}
+                placeholder="ELIMINAR"
+                className="w-full rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm text-[#14352a] outline-none transition focus:border-[#b3261e]"
+              />
+            </div>
+            <div className="flex justify-end gap-3 border-t border-[#eceef0] px-6 py-4">
+              <button
+                onClick={() => { setConfirmarEliminarTodo(false); setTextoConfirmacion(""); }}
+                disabled={eliminandoTodo}
+                className="rounded-lg border border-[#dfe4e0] bg-white px-4 py-2.5 text-sm font-medium text-[#45505e] hover:bg-[#f4f6f3] disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleEliminarTodo}
+                disabled={eliminandoTodo || textoConfirmacion.trim().toUpperCase() !== "ELIMINAR"}
+                className="rounded-lg bg-[#b3261e] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#941f18] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {eliminandoTodo ? "Eliminando…" : "Eliminar todo"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

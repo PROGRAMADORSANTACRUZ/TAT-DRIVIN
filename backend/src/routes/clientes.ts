@@ -8,7 +8,6 @@ import {
   fetchDrivinAddresses,
   buildAddressIndex,
   matchDrivinAddress,
-  crearClienteDrivin,
 } from "../lib/drivinAddresses";
 
 // Cruza las órdenes pendientes contra Drivin y asigna a cada cliente (por su
@@ -314,16 +313,7 @@ router.post("/", requireAuth, requirePermiso("/configuracion/clientes"), async (
     const cliente = await prisma.cliente.create({
       data: { ...data, consecutivos: JSON.stringify(consecutivos) },
     });
-    // Registra el cliente en Drivin (best-effort) para que exista antes de que
-    // salga la orden. No bloquea la creación local si Drivin falla.
-    const drivin = await crearClienteDrivin({
-      code: cliente.codigoDireccion,
-      name: cliente.cliente ?? cliente.nombreDireccion,
-      contactName: cliente.cliente ?? cliente.nombreDireccion,
-      contactPhone: cliente.telefono,
-      contactEmail: cliente.correo,
-    });
-    res.status(201).json({ ...cliente, consecutivos, drivin });
+    res.status(201).json({ ...cliente, consecutivos });
   } catch (err) {
     next(err);
   }
@@ -572,61 +562,12 @@ router.put("/:id", requireAuth, requirePermiso("/configuracion/clientes"), async
     }
 
     const cliente = await prisma.cliente.update({ where: { id }, data });
-    // Actualiza (o crea si aún no existe) el cliente en Drivin con los datos
-    // nuevos. Best-effort: nunca bloquea el guardado local si Drivin falla.
-    const drivin = await crearClienteDrivin({
-      code: cliente.codigoDireccion,
-      name: cliente.cliente ?? cliente.nombreDireccion,
-      contactName: cliente.cliente ?? cliente.nombreDireccion,
-      contactPhone: cliente.telefono,
-      contactEmail: cliente.correo,
-    });
     res.json({
       ...cliente,
       consecutivos: cliente.consecutivos
         ? (JSON.parse(cliente.consecutivos) as string[])
         : [],
-      drivin,
     });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// POST /api/clientes/actualizar-drivin  -> sube/actualiza en Drivin TODOS los
-// clientes de Distribución que tengan código de dirección. Usa el mismo upsert
-// (POST /v2/clients) que el crear/editar individual: si el código ya existe en
-// Drivin lo actualiza, si no existe lo crea. Secuencial y best-effort por
-// cliente (un error puntual no detiene el resto).
-router.post("/actualizar-drivin", requireAuth, requirePermiso("/configuracion/clientes"), async (_req, res, next) => {
-  try {
-    const clientes = await prisma.cliente.findMany({
-      where: { codigoDireccion: { not: null } },
-    });
-    let actualizados = 0;
-    const errores: { codigo: string; error: string }[] = [];
-    // Lotes en paralelo: evita saturar la API de Drivin y que la petición
-    // tarde demasiado (cientos de clientes uno por uno sería muy lento).
-    const LOTE = 20;
-    for (let i = 0; i < clientes.length; i += LOTE) {
-      const grupo = clientes.slice(i, i + LOTE);
-      const resultados = await Promise.all(
-        grupo.map((c) =>
-          crearClienteDrivin({
-            code: c.codigoDireccion,
-            name: c.cliente ?? c.nombreDireccion,
-            contactName: c.cliente ?? c.nombreDireccion,
-            contactPhone: c.telefono,
-            contactEmail: c.correo,
-          }).then((r) => ({ c, r }))
-        )
-      );
-      for (const { c, r } of resultados) {
-        if (r.ok) actualizados++;
-        else errores.push({ codigo: c.codigoDireccion ?? "", error: r.error ?? "Error desconocido" });
-      }
-    }
-    res.json({ total: clientes.length, actualizados, fallidos: errores.length, errores: errores.slice(0, 20) });
   } catch (err) {
     next(err);
   }

@@ -1534,14 +1534,9 @@ export default function OrdenesPage() {
           tipoInicial={crearTarget.distribucion === "TAT" ? "TAT" : "Distribución"}
           consecutivoInicial={`${crearTarget.cliente} - ${crearTarget.destino}`}
           onClose={() => setCrearTarget(null)}
-          onSaved={(saved) => {
+          onSaved={() => {
             setCrearTarget(null);
-            const d = (saved as { drivin?: { ok: boolean; error?: string } }).drivin;
-            setMessage(
-              "Cliente creado." +
-                (d ? (d.ok ? " Registrado en Drivin." : ` No se pudo crear en Drivin: ${d.error}.`) : "") +
-                " Actualizando verificación…"
-            );
+            setMessage("Cliente creado. Actualizando verificación…");
             load();
           }}
         />
