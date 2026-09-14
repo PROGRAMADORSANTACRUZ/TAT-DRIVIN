@@ -507,17 +507,15 @@ router.post(
 );
 
 // GET /api/clientes/export  -> descarga TODOS los clientes (Distribución + TAT) en
-// un Excel con el formato COMPLETO de Drivin (mismas columnas y mismo orden que
-// su Excel de "Direcciones", incluidas las que Distrilog no usa) más, al final,
-// las columnas propias de Distrilog. Así el archivo se puede subir tal cual a
-// Drivin sin tener que agregarle columnas a mano.
+// un Excel con el formato EXACTO de Drivin (mismas columnas, mismo orden y mismo
+// encabezado que su Excel de "Direcciones", incluidas las que Distrilog no usa).
+// Ninguna columna extra al final: el archivo se puede subir tal cual a Drivin.
 const CAMPO_POR_HEADER_DRIVIN = new Map(CAMPOS.map((c) => [c.header, c.key] as const));
 router.get("/export", requireAuth, async (_req, res, next) => {
   try {
     // Cliente ya es la única fuente de verdad (Distribución + TAT unificados).
     const clientes = await prisma.cliente.findMany({ orderBy: { cliente: "asc" } });
-    const camposPropios = CAMPOS_EXTRA.filter((k) => k !== "telefono" && k !== "correo");
-    const headers = [...CAMPOS_DRIVIN_COMPLETO, ...camposPropios.map((k) => EXTRA_HEADERS[k])];
+    const headers = [...CAMPOS_DRIVIN_COMPLETO];
     const rows: Record<string, string>[] = [];
 
     for (const c of clientes) {
@@ -547,7 +545,6 @@ router.get("/export", requireAuth, async (_req, res, next) => {
           else row[header] = extra[header] ?? "";
         }
       }
-      for (const key of camposPropios) row[EXTRA_HEADERS[key]] = (src[key] as string | null) ?? "";
       rows.push(row);
     }
 
