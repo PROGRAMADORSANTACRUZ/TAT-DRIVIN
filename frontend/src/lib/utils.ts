@@ -5,6 +5,16 @@ export function tc(value: unknown): string {
     .trim();
 }
 
+// Igual que tc() pero SIN recortar espacios: para usar en onChange mientras el
+// usuario escribe. tc() hace .trim() y borraba el espacio recién tecleado al
+// final (impedía separar palabras); esta variante conserva espacios internos
+// y el espacio final hasta que el campo se guarda (ahí sí se usa tc()/trim()).
+export function tcVivo(value: unknown): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/(?:^|\s)\S/g, (c) => c.toUpperCase());
+}
+
 // Etiqueta de consecutivo de planilla (distribución logística): DL-00010
 export const dlLabel = (n: number | string) => `DL-${String(n).padStart(5, "0")}`;
 

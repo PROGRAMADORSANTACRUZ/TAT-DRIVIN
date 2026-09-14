@@ -10,7 +10,7 @@ import {
   type Cliente,
   type ClienteTat,
 } from "@/lib/api";
-import { tc } from "@/lib/utils";
+import { tc, tcVivo } from "@/lib/utils";
 import DireccionInput from "./DireccionInput";
 import MapaDireccion from "./MapaDireccion";
 import CiudadInput from "./CiudadInput";
@@ -301,7 +301,7 @@ export default function ClienteFormModal({
                     Cliente activo
                   </label>
                   <Campo label="Nombre / Razón social *" full>
-                    <input value={form.nombre} onChange={(e) => set("nombre", tc(e.target.value))} className={INPUT_CLS} />
+                    <input value={form.nombre} onChange={(e) => set("nombre", tcVivo(e.target.value))} className={INPUT_CLS} />
                   </Campo>
                 </div>
               </Bloque>
@@ -310,7 +310,7 @@ export default function ClienteFormModal({
                 <DireccionInput value={form.direccion} onChange={(v) => set("direccion", v)} />
                 <div className="mt-3">
                   <Campo label="Referencia">
-                    <input value={form.referencia} onChange={(e) => set("referencia", tc(e.target.value))} placeholder="Ej. Frente Al Parque, Casa Esquinera…" className={INPUT_CLS} />
+                    <input value={form.referencia} onChange={(e) => set("referencia", tcVivo(e.target.value))} placeholder="Ej. Frente Al Parque, Casa Esquinera…" className={INPUT_CLS} />
                   </Campo>
                 </div>
               </Bloque>
@@ -399,7 +399,7 @@ export default function ClienteFormModal({
               <Bloque titulo="Barrio y ciudad">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Campo label="Barrio">
-                    <input value={form.barrio} onChange={(e) => set("barrio", tc(e.target.value))} placeholder="Barrio" className={INPUT_CLS} />
+                    <input value={form.barrio} onChange={(e) => set("barrio", tcVivo(e.target.value))} placeholder="Barrio" className={INPUT_CLS} />
                   </Campo>
                   <Campo label="Ciudad">
                     <CiudadInput
