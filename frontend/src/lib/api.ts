@@ -437,8 +437,8 @@ export type ClienteInput = Partial<Omit<Cliente, "id" | "createdAt">>;
 export function updateCliente(
   id: string,
   data: ClienteInput
-): Promise<Cliente> {
-  return request<Cliente>(`/api/clientes/${id}`, {
+): Promise<Cliente & { drivin?: { ok: boolean; error?: string } }> {
+  return request(`/api/clientes/${id}`, {
     method: "PUT",
     body: JSON.stringify(data),
   });
@@ -451,6 +451,16 @@ export function crearCliente(
     method: "POST",
     body: JSON.stringify(data),
   });
+}
+
+// Sube/actualiza en Drivin TODOS los clientes de Distribución con código.
+export function actualizarClientesDrivin(): Promise<{
+  total: number;
+  actualizados: number;
+  fallidos: number;
+  errores: { codigo: string; error: string }[];
+}> {
+  return request("/api/clientes/actualizar-drivin", { method: "POST" });
 }
 
 export function asignarConsecutivo(

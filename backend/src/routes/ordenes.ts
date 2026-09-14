@@ -570,6 +570,30 @@ function esConcatNit(k: string): boolean {
   return /^\d{5,}(?:-\d+)?$/.test(k);
 }
 
+// Clave agresiva para cruzar por destino: sin acentos, mayúsculas, SIN espacios
+// y SIN puntos (más estricta que claveCliente). Se usa como respaldo cuando el
+// código no matchea, para tolerar variantes de escritura del mismo destino.
+function claveSinEspacios(s: unknown): string {
+  return String(s ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\./g, "")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+// Puntaje de similitud entre dos direcciones por solape de palabras (>=3 letras).
+// Se usa para elegir, entre varios clientes TAT con el mismo NIT (misma persona,
+// distintas sucursales), el que tiene la dirección más parecida a la de la factura.
+function similitudDireccion(a: unknown, b: unknown): number {
+  const tokensA = new Set(claveCliente(a).split(" ").filter((t) => t.length >= 3));
+  const tokensB = claveCliente(b).split(" ").filter((t) => t.length >= 3);
+  let score = 0;
+  for (const t of tokensB) if (tokensA.has(t)) score++;
+  return score;
+}
+
 // GET /api/ordenes/verificar-clientes
 // Cruza los clientes/destinos de las órdenes pendientes contra: (1) los
 // consecutivos asignados manualmente a un cliente en nuestra BD y (2) las
@@ -876,7 +900,44 @@ router.post(
         }
         sinCodigo = omitidas.size;
       }
-      const ordenesConCodigo = conNumero.map((o) => ({ ...o, numeroOrden: tipo + o.numeroOrden }));
+
+      // Cruza cada orden con el maestro de Clientes (Distribución): primero por
+      // código exacto (Cliente.codigoDireccion); si no hay, por destino
+      // normalizado (sin espacios ni puntos) contra los consecutivos del
+      // cliente. Rellena código/dirección solo si la orden no los trae ya.
+      const clientesGS = await prisma.cliente.findMany({
+        select: { codigoDireccion: true, direccion: true, consecutivos: true },
+      });
+      const gsPorCodigo = new Map<string, { direccion: string | null }>();
+      const gsPorDestino = new Map<string, { codigoDireccion: string | null; direccion: string | null }>();
+      for (const c of clientesGS) {
+        if (c.codigoDireccion) gsPorCodigo.set(claveCliente(c.codigoDireccion), { direccion: c.direccion });
+        if (!c.consecutivos) continue;
+        try {
+          for (const con of JSON.parse(c.consecutivos) as string[]) {
+            const k = claveSinEspacios(con);
+            if (k && !gsPorDestino.has(k)) {
+              gsPorDestino.set(k, { codigoDireccion: c.codigoDireccion, direccion: c.direccion });
+            }
+          }
+        } catch { /* consecutivos inválidos */ }
+      }
+
+      const ordenesConCodigo = conNumero.map((o) => {
+        let codigo = o.codigo;
+        let direccion = o.direccion;
+        const porCodigo = codigo ? gsPorCodigo.get(claveCliente(codigo)) : undefined;
+        if (porCodigo) {
+          direccion = direccion || porCodigo.direccion;
+        } else {
+          const porDestino = gsPorDestino.get(claveSinEspacios(o.destino));
+          if (porDestino) {
+            codigo = codigo || porDestino.codigoDireccion;
+            direccion = direccion || porDestino.direccion;
+          }
+        }
+        return { ...o, numeroOrden: tipo + o.numeroOrden, codigo, direccion };
+      });
       if (ordenesConCodigo.length === 0) {
         throw new HttpError(400, "El archivo no contiene órdenes válidas");
       }
@@ -1219,13 +1280,30 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
     const nit = String(filas[0].cliente_factura ?? "").trim();
     const numeroOrden = String(filas[0].nro_documento ?? documento).trim();
 
-    // Dirección/vendedor del maestro TAT por NIT (fallback si la factura no la trae).
-    const clienteTat = nit
-      ? await prisma.clienteTat.findFirst({
+    // Dirección/vendedor del maestro TAT por NIT (fallback si la factura no la
+    // trae). Un mismo NIT puede tener varias sucursales/direcciones: si hay más
+    // de una coincidencia, se elige la de mayor coincidencia con la dirección
+    // que trae la factura (solape de palabras); si no hay ninguna pista, se usa
+    // la primera para no romper el flujo.
+    const candidatosTat = nit
+      ? await prisma.clienteTat.findMany({
           where: { nit, eliminado: false },
           select: { direccion1: true, vendedor: true },
         })
-      : null;
+      : [];
+    const dirInv = String(filas[0].direccion_sucursal ?? "").trim();
+    let clienteTat: { direccion1: string | null; vendedor: string | null } | null = null;
+    if (candidatosTat.length === 1) {
+      clienteTat = candidatosTat[0];
+    } else if (candidatosTat.length > 1) {
+      let mejor = candidatosTat[0];
+      let mejorScore = -1;
+      for (const c of candidatosTat) {
+        const score = similitudDireccion(dirInv, c.direccion1 ?? "");
+        if (score > mejorScore) { mejorScore = score; mejor = c; }
+      }
+      clienteTat = mejor;
+    }
     const dirMaestro = (clienteTat?.direccion1 ?? "").trim();
 
     // Preserva el vehículo y la ruta si esta factura ya estaba cargada.
@@ -1238,7 +1316,6 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
     const ruta = rutaBody ?? previa?.ruta ?? null;
 
     const codigo = nit ? claveNitSucursal(nit, filas[0].codigo_sucursal) : null;
-    const dirInv = String(filas[0].direccion_sucursal ?? "").trim();
     const dirInvOk = dirInv.length >= 2 && !NO_DIRECCION_TAT.has(dirInv.toUpperCase());
     const direccion = dirInvOk ? dirInv : (dirMaestro && esDireccionTatValida(dirMaestro) ? dirMaestro : null);
     const destino = codigo ?? direccion ?? nit;

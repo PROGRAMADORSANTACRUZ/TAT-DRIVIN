@@ -10,6 +10,7 @@ import {
   getClientesTat,
   importClientes,
   exportClientes,
+  actualizarClientesDrivin,
   type Cliente,
   type ClienteTat,
 } from "@/lib/api";
@@ -88,6 +89,7 @@ export default function ClientesPage() {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [sincronizandoDrivin, setSincronizandoDrivin] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -152,6 +154,23 @@ export default function ClientesPage() {
     }
   }
 
+  async function handleActualizarDrivin() {
+    setSincronizandoDrivin(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const r = await actualizarClientesDrivin();
+      setMessage(
+        `Drivin: ${r.actualizados} de ${r.total} clientes actualizados.` +
+          (r.fallidos ? ` ${r.fallidos} fallaron.` : "")
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Error al actualizar en Drivin");
+    } finally {
+      setSincronizandoDrivin(false);
+    }
+  }
+
   const rows: Row[] = [
     ...clientesGS.map(fromGS),
     ...clientesTat.map(fromTat),
@@ -191,6 +210,27 @@ export default function ClientesPage() {
           onChange={handleFile}
         />
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleActualizarDrivin}
+            disabled={sincronizandoDrivin}
+            className={btn}
+            title="Sube/actualiza en Drivin todos los clientes de Distribución con código"
+          >
+            {sincronizandoDrivin ? (
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.37 0 0 5.37 0 12h4Z" />
+              </svg>
+            ) : (
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 2v6h-6" />
+                <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                <path d="M3 22v-6h6" />
+                <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+              </svg>
+            )}
+            {sincronizandoDrivin ? "Actualizando…" : "Actualizar clientes en Drivin"}
+          </button>
           <button
             onClick={handleExport}
             disabled={exporting}
