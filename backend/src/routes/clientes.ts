@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
+import * as XLSXStyle from "xlsx-js-style";
 import { prisma } from "../lib/prisma";
 import { HttpError } from "../middleware/errorHandler";
 import { requireAuth, requirePermiso } from "../middleware/auth";
@@ -551,9 +552,33 @@ router.get("/export", requireAuth, async (_req, res, next) => {
     const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
     // Si no hay clientes, deja al menos la fila de encabezados como plantilla.
     if (rows.length === 0) XLSX.utils.sheet_add_aoa(ws, [headers], { origin: "A1" });
+
+    // Encabezado en negrita, más grande y con fondo de color (no plano como el resto).
+    const estiloEncabezado = {
+      font: { bold: true, sz: 12, color: { rgb: "FFFFFF" } },
+      fill: { patternType: "solid", fgColor: { rgb: "2F8F4E" } },
+      alignment: { vertical: "center", horizontal: "center" },
+    };
+    headers.forEach((_, i) => {
+      const ref = XLSX.utils.encode_cell({ r: 0, c: i });
+      if (ws[ref]) (ws[ref] as XLSX.CellObject & { s?: unknown }).s = estiloEncabezado;
+    });
+    ws["!rows"] = [{ hpt: 22 }];
+
+    // Ancho de columna según el contenido más largo (encabezado o dato), para
+    // que no queden todas las columnas apretadas y haya que ajustarlas a mano.
+    ws["!cols"] = headers.map((h) => {
+      let max = h.length;
+      for (const row of rows) {
+        const v = row[h] ?? "";
+        if (v.length > max) max = v.length;
+      }
+      return { wch: Math.min(Math.max(max + 2, 10), 60) };
+    });
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Clientes");
-    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    const buf = XLSXStyle.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
     const fecha = new Date().toISOString().slice(0, 10);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="clientes-distrilog-${fecha}.xlsx"`);
