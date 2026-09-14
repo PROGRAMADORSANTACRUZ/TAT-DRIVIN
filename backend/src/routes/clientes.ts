@@ -528,11 +528,24 @@ router.get("/export", requireAuth, async (_req, res, next) => {
       }
       const row: Record<string, string> = {};
       for (const header of CAMPOS_DRIVIN_COMPLETO) {
-        const campo = CAMPO_POR_HEADER_DRIVIN.get(header);
-        if (campo) row[header] = (src[campo] as string | null) ?? "";
-        else if (header === EXTRA_HEADERS.telefono) row[header] = (src.telefono as string | null) ?? "";
-        else if (header === EXTRA_HEADERS.correo) row[header] = (src.correo as string | null) ?? "";
-        else row[header] = extra[header] ?? "";
+        // Encabezados calculados (no vienen de un campo propio 1 a 1): igual
+        // que en el export real de Drivin (Tipo/Código Cliente/Nombre Contacto
+        // repiten otro campo; Referencia va concatenada con el nombre).
+        if (header === "Tipo de Dirección") {
+          row[header] = c.tipo === "TAT" ? "TAT" : "Agropecuaria";
+        } else if (header === "Referencia") {
+          row[header] = `${c.cliente ?? ""} / ${c.referencia ?? ""}`;
+        } else if (header === "Código Cliente") {
+          row[header] = c.codigoDireccion ?? "";
+        } else if (header === "Nombre Contacto") {
+          row[header] = c.nombreDireccion ?? "";
+        } else {
+          const campo = CAMPO_POR_HEADER_DRIVIN.get(header);
+          if (campo) row[header] = (src[campo] as string | null) ?? "";
+          else if (header === EXTRA_HEADERS.telefono) row[header] = (src.telefono as string | null) ?? "";
+          else if (header === EXTRA_HEADERS.correo) row[header] = (src.correo as string | null) ?? "";
+          else row[header] = extra[header] ?? "";
+        }
       }
       for (const key of camposPropios) row[EXTRA_HEADERS[key]] = (src[key] as string | null) ?? "";
       rows.push(row);
