@@ -308,7 +308,16 @@ export default function FacturaScanModal({
               <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[#7a8794]">Manual</p>
               <label className="block">
                 <span className="mb-1 block text-xs text-[#7a8794]">N.º factura (NumFac)</span>
-                <input value={manualNum} onChange={(e) => setManualNum(e.target.value)} placeholder="FEP62162" className="w-full rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm outline-none focus:border-[#2f8f4e]" />
+                <div className="flex items-center overflow-hidden rounded-lg border border-[#dfe4e0] focus-within:border-[#2f8f4e]">
+                  <span className="select-none border-r border-[#dfe4e0] bg-[#f4f6f3] px-3 py-2 text-sm font-medium text-[#7a8794]">FEP</span>
+                  <input
+                    value={manualNum}
+                    onChange={(e) => setManualNum(e.target.value.replace(/\D/g, ""))}
+                    placeholder="62162"
+                    inputMode="numeric"
+                    className="w-full px-3 py-2 text-sm outline-none"
+                  />
+                </div>
               </label>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
                 <label className="flex-1">
@@ -320,7 +329,7 @@ export default function FacturaScanModal({
                   <input type="date" value={manualFecFin} onChange={(e) => setManualFecFin(e.target.value)} className="w-full rounded-lg border border-[#dfe4e0] px-3 py-2 text-sm outline-none focus:border-[#2f8f4e]" />
                 </label>
                 <button
-                  onClick={() => manualNum.trim() && guardar(manualNum.trim(), manualFecIni, manualFecFin)}
+                  onClick={() => manualNum.trim() && guardar(`FEP${manualNum.trim()}`, manualFecIni, manualFecFin)}
                   disabled={buscando || !manualNum.trim()}
                   className="rounded-lg bg-[#2f8f4e] px-4 py-2 text-sm font-medium text-white hover:bg-[#277a42] disabled:opacity-50"
                 >
