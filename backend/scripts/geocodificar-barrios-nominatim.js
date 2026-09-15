@@ -55,7 +55,7 @@ async function geocodificar(direccion, ciudad, intentos = 3) {
     try {
       const r = await geocodificar(c.direccion, c.provincia);
       const data = {};
-      if (r && r.barrio) { data.barrio = r.barrio; ok++; } else { sinBarrioEnRespuesta++; }
+      if (r && r.barrio) { data.barrio = r.barrio; data.comuna = r.barrio; ok++; } else { sinBarrioEnRespuesta++; }
       if (!c.region && r && r.state) {
         const depto = CIUDAD_A_DEPTO.get(norm(c.provincia)) || null;
         data.region = depto || r.state;

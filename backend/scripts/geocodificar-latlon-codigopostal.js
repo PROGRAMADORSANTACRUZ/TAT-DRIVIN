@@ -62,7 +62,7 @@ async function geocodificar(direccion, ciudad, intentos = 3) {
       const data = {};
       if (r.lat && r.lon) { data.lat = r.lat; data.lon = r.lon; okLatLon++; }
       if (r.codigoPostal) { data.codigoPostal = r.codigoPostal; okCp++; }
-      if (!c.barrio && r.barrio) { data.barrio = r.barrio; okBarrio++; }
+      if (!c.barrio && r.barrio) { data.barrio = r.barrio; data.comuna = r.barrio; okBarrio++; }
       if (!c.region && r.state) {
         data.region = CIUDAD_A_DEPTO.get(norm(c.provincia)) || r.state;
         okRegion++;
