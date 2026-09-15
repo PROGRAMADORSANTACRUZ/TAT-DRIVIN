@@ -613,6 +613,8 @@ export async function importOrdenes(
   rechazados: number;
   pendientes: number;
   sinCodigo?: number;
+  noCreadas?: number;
+  clientesAutoAsignados?: number;
 }> {
   const form = new FormData();
   form.append("tipo", tipo);

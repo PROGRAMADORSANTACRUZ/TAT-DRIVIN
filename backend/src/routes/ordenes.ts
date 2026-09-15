@@ -575,6 +575,21 @@ function similitudDireccion(a: unknown, b: unknown): number {
   return score;
 }
 
+// Similitud NORMALIZADA (0..1, Jaccard sobre palabras >=3 letras) entre el
+// destino de una orden y el nombre real de un cliente. Se usa para auto-asignar
+// el cliente correcto en el import cuando no hay código ni consecutivo ya
+// registrado (ver mejorMatchPorNombre en /import).
+const UMBRAL_SIMILITUD_NOMBRE = 0.5;
+function similitudNombre(a: unknown, b: unknown): number {
+  const ta = new Set(claveCliente(a).split(" ").filter((t) => t.length >= 3));
+  const tb = new Set(claveCliente(b).split(" ").filter((t) => t.length >= 3));
+  if (ta.size === 0 || tb.size === 0) return 0;
+  let inter = 0;
+  for (const t of ta) if (tb.has(t)) inter++;
+  const union = new Set([...ta, ...tb]).size;
+  return union === 0 ? 0 : inter / union;
+}
+
 // GET /api/ordenes/verificar-clientes
 // Cruza los clientes/destinos de las órdenes pendientes contra: (1) los
 // consecutivos asignados manualmente a un cliente en nuestra BD y (2) las
@@ -841,9 +856,11 @@ router.post(
       // Cruza cada orden con el maestro de Clientes (Distribución): primero por
       // código exacto (Cliente.codigoDireccion); si no hay, por destino
       // normalizado (sin espacios ni puntos) contra los consecutivos del
-      // cliente. Rellena código/dirección solo si la orden no los trae ya.
+      // cliente; si tampoco, por parecido de nombre (destino vs Cliente.cliente,
+      // ver mejorMatchPorNombre). Rellena código/dirección solo si la orden no
+      // los trae ya.
       const clientesGS = await prisma.cliente.findMany({
-        select: { codigoDireccion: true, direccion: true, consecutivos: true },
+        select: { id: true, cliente: true, codigoDireccion: true, direccion: true, consecutivos: true },
       });
       const gsPorCodigo = new Map<string, { direccion: string | null }>();
       const gsPorDestino = new Map<string, { codigoDireccion: string | null; direccion: string | null }>();
@@ -860,9 +877,31 @@ router.post(
         } catch { /* consecutivos inválidos */ }
       }
 
+      // Clientes con nombre real, para el fallback por parecido (mín. 50% de
+      // palabras en común entre el destino y el nombre del cliente).
+      const clientesConNombre = clientesGS.filter((c) => c.cliente && c.cliente.trim());
+      function mejorMatchPorNombre(destino: string): (typeof clientesConNombre)[number] | null {
+        let mejor: (typeof clientesConNombre)[number] | null = null;
+        let mejorScore = 0;
+        for (const c of clientesConNombre) {
+          const score = similitudNombre(destino, c.cliente);
+          if (score > mejorScore) {
+            mejorScore = score;
+            mejor = c;
+          }
+        }
+        return mejorScore >= UMBRAL_SIMILITUD_NOMBRE ? mejor : null;
+      }
+      // Consecutivos nuevos a guardar en Cliente ("cliente - destino" tal cual
+      // viene en el archivo), para que la próxima vez que llegue ese mismo
+      // destino ya resuelva por gsPorDestino sin necesitar el parecido de nombre.
+      const nuevosConsecutivosPorCliente = new Map<string, Set<string>>();
+
       const ordenesConCodigo = conNumero.map((o) => {
         let codigo = o.codigo;
         let direccion = o.direccion;
+        let cliente = o.cliente;
+        let sinResolver = false;
         const porCodigo = codigo ? gsPorCodigo.get(claveCliente(codigo)) : undefined;
         if (porCodigo) {
           direccion = direccion || porCodigo.direccion;
@@ -871,9 +910,25 @@ router.post(
           if (porDestino) {
             codigo = codigo || porDestino.codigoDireccion;
             direccion = direccion || porDestino.direccion;
+          } else {
+            const mejor = mejorMatchPorNombre(o.destino);
+            if (mejor) {
+              codigo = codigo || mejor.codigoDireccion;
+              direccion = direccion || mejor.direccion;
+              cliente = mejor.cliente ?? cliente;
+              const consecutivo = `${o.cliente} - ${o.destino}`;
+              let set = nuevosConsecutivosPorCliente.get(mejor.id);
+              if (!set) {
+                set = new Set();
+                nuevosConsecutivosPorCliente.set(mejor.id, set);
+              }
+              set.add(consecutivo);
+            } else if (!codigo) {
+              sinResolver = true;
+            }
           }
         }
-        return { ...o, numeroOrden: tipo + o.numeroOrden, codigo, direccion };
+        return { ...o, numeroOrden: tipo + o.numeroOrden, codigo, direccion, cliente, sinResolver };
       });
       if (ordenesConCodigo.length === 0) {
         throw new HttpError(400, "El archivo no contiene órdenes válidas");
@@ -896,11 +951,12 @@ router.post(
       }
 
       const data = ordenesConCodigo.map((o) => {
+        const { sinResolver, ...resto } = o;
         const pod = podEstados.get(normCodigo(o.numeroOrden));
         return {
-          ...o,
+          ...resto,
           distribucion: "AGROPECUARIA",
-          estado: estadoDesdePod(pod?.status),
+          estado: sinResolver ? "No Creado" : estadoDesdePod(pod?.status),
           podCode: pod?.podCode ?? null,
           scenarioToken: pod?.scenarioToken ?? null,
           deliveredBy: pod?.deliveredBy ?? null,
@@ -922,13 +978,30 @@ router.post(
         prisma.orden.createMany({ data }),
       ]);
 
+      // Guarda los consecutivos auto-asignados por parecido de nombre, para que
+      // el próximo import de ese mismo destino resuelva directo (sin depender
+      // otra vez del parecido).
+      for (const [clienteId, nuevos] of nuevosConsecutivosPorCliente) {
+        const actual = await prisma.cliente.findUnique({ where: { id: clienteId }, select: { consecutivos: true } });
+        if (!actual) continue;
+        let lista: string[] = [];
+        try { lista = actual.consecutivos ? (JSON.parse(actual.consecutivos) as string[]) : []; } catch { lista = []; }
+        for (const n of nuevos) {
+          if (!lista.some((x) => x.toUpperCase() === n.toUpperCase())) lista.push(n);
+        }
+        await prisma.cliente.update({ where: { id: clienteId }, data: { consecutivos: JSON.stringify(lista) } });
+      }
+
       const nEntregados = data.filter((d) => d.estado === "Entregado").length;
       const nRechazados = data.filter((d) => d.estado === "Rechazado").length;
+      const nNoCreados = data.filter((d) => d.estado === "No Creado").length;
       res.status(201).json({
         importados: data.length,
         entregados: nEntregados,
         rechazados: nRechazados,
-        pendientes: data.length - nEntregados - nRechazados,
+        pendientes: data.length - nEntregados - nRechazados - nNoCreados,
+        noCreadas: nNoCreados,
+        clientesAutoAsignados: nuevosConsecutivosPorCliente.size,
         sinCodigo,
       });
     } catch (err) {

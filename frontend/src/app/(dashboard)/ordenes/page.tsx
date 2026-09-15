@@ -337,10 +337,12 @@ export default function OrdenesPage() {
     setError(null);
     setMessage(null);
     try {
-      const { importados, entregados, rechazados, pendientes, sinCodigo } =
+      const { importados, entregados, rechazados, pendientes, sinCodigo, noCreadas, clientesAutoAsignados } =
         await importOrdenes(file, tipo);
       setMessage(
         `Se importaron ${importados}: ${entregados} entregadas, ${rechazados} rechazadas, ${pendientes} pendientes.` +
+          (clientesAutoAsignados ? ` ${clientesAutoAsignados} ${clientesAutoAsignados === 1 ? "cliente se" : "clientes se"} asignaron automático por parecido de nombre.` : "") +
+          (noCreadas ? ` ${noCreadas} ${noCreadas === 1 ? "orden quedó" : "órdenes quedaron"} como "No Creado" (no se encontró el cliente ni por código, destino o nombre).` : "") +
           (sinCodigo ? ` ${sinCodigo} ${sinCodigo === 1 ? "orden quedó" : "órdenes quedaron"} sin código (regístralas en la verificación de clientes).` : "")
       );
       await load();
@@ -406,7 +408,7 @@ export default function OrdenesPage() {
   const term = search.trim().toLowerCase();
 
   const filteredPendientes = activeCatOrdenes.filter((o) => {
-    if (o.estado === "Entregado" || o.estado === "Rechazado") return false;
+    if (o.estado === "Entregado" || o.estado === "Rechazado" || o.estado === "No Creado") return false;
     if (
       term &&
       ![o.numeroOrden, o.cliente, o.destino, o.producto, o.fecha].some((f) =>
@@ -614,7 +616,7 @@ export default function OrdenesPage() {
           {CATEGORIES.map((cat) => {
             const catOrdenes = getOrdenesForCategory(ordenes, cat.id);
             const catPendientes = catOrdenes.filter(
-              (o) => o.estado !== "Entregado" && o.estado !== "Rechazado"
+              (o) => o.estado !== "Entregado" && o.estado !== "Rechazado" && o.estado !== "No Creado"
             );
             const catPendientesGrupos = agrupar(catPendientes);
             const catTotalKg = catPendientes.reduce((s, o) => s + o.cantidadKg, 0);
