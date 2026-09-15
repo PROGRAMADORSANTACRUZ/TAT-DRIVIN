@@ -1215,14 +1215,21 @@ function esDireccionTatValida(d: string): boolean {
 }
 
 
-// Convierte el NumFac del QR (ej. "FEP62162") al documento de Siesa.
-// Toma los dígitos tras las letras, rellena a 8 con ceros y antepone el prefijo
-// según la compañía: Agropecuaria -> "1FE-", Inversiones -> "FE-".
-function numFacADocumento(numFac: string, origen: string): string {
+// Convierte el NumFac del QR (ej. "FEP62162") en la lista de posibles "documento"
+// de Siesa a probar, en orden. El prefijo interno de Siesa no se deriva del
+// prefijo del QR (DIAN), así que se prueban los prefijos conocidos de ambas
+// compañías (por si Inversiones también usa "1FE-" o viceversa) antes de
+// darse por vencido.
+const PREFIJOS_DOCUMENTO_POR_ORIGEN: Record<string, string[]> = {
+  AGROPECUARIA: ["1FE-", "FE-"],
+  INVERSIONES: ["FE-", "1FE-"],
+};
+function documentosCandidatos(numFac: string, origen: string): string[] {
   const digitos = String(numFac ?? "").replace(/\D/g, "");
-  if (!digitos) return "";
+  if (!digitos) return [];
   const pad = digitos.padStart(8, "0");
-  return (origen === "INVERSIONES" ? "FE-" : "1FE-") + pad;
+  const prefijos = PREFIJOS_DOCUMENTO_POR_ORIGEN[origen] ?? ["FE-", "1FE-"];
+  return prefijos.map((p) => p + pad);
 }
 
 // Limpia el tipo comercial "3202 - CANUTA COMESTIBLE" -> "CANUTA COMESTIBLE".
@@ -1254,37 +1261,46 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
     // Ruta/grupo opcional con el que se organiza la factura (ej. "Ruta 1").
     const rutaBody = String(req.body?.ruta ?? "").trim().slice(0, 60) || null;
 
-    const documento = numFacADocumento(numFac, origen);
-    if (!documento) throw new HttpError(400, "No se pudo interpretar el número de factura");
+    const candidatos = documentosCandidatos(numFac, origen);
+    if (candidatos.length === 0) throw new HttpError(400, "No se pudo interpretar el número de factura");
 
     const base = origen === "INVERSIONES" ? env.FACTURAS_INV_URL : env.FACTURAS_AGRO_URL;
-    const params = new URLSearchParams({
-      cia,
-      fecha_inicio: fechaInicio,
-      fecha_fin: fechaFin,
-      documento,
-      ...(env.CLIENTES_TAT_TOKEN ? { token: env.CLIENTES_TAT_TOKEN } : {}),
-    });
 
-    let resp: Response;
-    try {
-      resp = await fetch(`${base}?${params}`, {
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(15000),
+    // Prueba cada formato de documento posible (distintos prefijos de Siesa)
+    // hasta encontrar uno con resultados; solo falla si NINGUNO trajo datos.
+    let documento = candidatos[0];
+    let filas: TatInvoice[] = [];
+    for (const candidato of candidatos) {
+      const params = new URLSearchParams({
+        cia,
+        fecha_inicio: fechaInicio,
+        fecha_fin: fechaFin,
+        documento: candidato,
+        ...(env.CLIENTES_TAT_TOKEN ? { token: env.CLIENTES_TAT_TOKEN } : {}),
       });
-    } catch (err) {
-      const detalle = (err as Error)?.name ?? (err as Error)?.message ?? "desconocido";
-      throw new HttpError(502, `No se pudo conectar con Siesa (${detalle})`);
+      let resp: Response;
+      try {
+        resp = await fetch(`${base}?${params}`, {
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(15000),
+        });
+      } catch (err) {
+        const detalle = (err as Error)?.name ?? (err as Error)?.message ?? "desconocido";
+        throw new HttpError(502, `No se pudo conectar con Siesa (${detalle})`);
+      }
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => "");
+        throw new HttpError(502, `Siesa respondió ${resp.status}: ${body.slice(0, 150)}`);
+      }
+      const json = (await resp.json()) as { data?: TatInvoice[] };
+      documento = candidato;
+      if ((json.data ?? []).length > 0) {
+        filas = json.data as TatInvoice[];
+        break;
+      }
     }
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => "");
-      throw new HttpError(502, `Siesa respondió ${resp.status}: ${body.slice(0, 150)}`);
-    }
-
-    const json = (await resp.json()) as { data?: TatInvoice[] };
-    const filas = json.data ?? [];
     if (filas.length === 0) {
-      throw new HttpError(404, `No se encontró la factura ${documento} en ${origen}`);
+      throw new HttpError(404, `No se encontró la factura ${numFac} en ${origen} (se probó: ${candidatos.join(", ")})`);
     }
 
     const nit = String(filas[0].cliente_factura ?? "").trim();
