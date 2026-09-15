@@ -22,7 +22,7 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 async function geocodificar(direccion, ciudad, intentos = 4) {
   const dirLimpia = direccion.replace(/#/g, "No");
   const q = `${dirLimpia}, ${ciudad}, Colombia`;
-  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=3&lang=es`;
+  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=3`;
   const ciudadNorm = norm(ciudad);
   let lastErr = null;
   for (let i = 0; i < intentos; i++) {
