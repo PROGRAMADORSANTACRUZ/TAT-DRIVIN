@@ -312,6 +312,13 @@ function estadoDesdePod(status: string | undefined): string {
       return "Parcial";
     case "rejected":
       return "Rechazado";
+    case "pending":
+    case "in-transit":
+      // Ya tiene un escenario/POD en Drivin (fue despachada): si se reimporta
+      // el mismo número de orden (el ERP la sigue exportando hasta que se
+      // entregue), no debe volver a "Pendiente" como si nunca se hubiera
+      // enviado, porque eso la saca de la vista de "ya despachada".
+      return "Enviado";
     default:
       return "Pendiente";
   }
@@ -942,6 +949,17 @@ router.post(
         throw new HttpError(400, "El archivo no contiene órdenes válidas");
       }
 
+      // El ERP suele reexportar la misma remisión varios días seguidos hasta
+      // que se entrega; como el import reemplaza las órdenes del tipo, hay que
+      // conservar la asignación de vehículo/ruta (y reenvío) que ya tenían, si
+      // no cada reimport la manda de vuelta a "sin asignar" aunque ya se haya
+      // despachado.
+      const previos = await prisma.orden.findMany({
+        where: { distribucion: "AGROPECUARIA", numeroOrden: { in: ordenesConCodigo.map((o) => o.numeroOrden) } },
+        select: { numeroOrden: true, asignadoVehiculo: true, ruta: true, reenviado: true, reenviadoAt: true },
+      });
+      const previoPorNumero = new Map(previos.map((p) => [p.numeroOrden, p]));
+
       // Cruza con los PODs de Drivin para marcar las entregadas.
       const isoDates = ordenesConCodigo
         .map((o) => ddmmyyyyToISO(o.fecha))
@@ -961,6 +979,7 @@ router.post(
       const data = ordenesConCodigo.map((o) => {
         const { sinResolver, ...resto } = o;
         const pod = podEstados.get(normCodigo(o.numeroOrden));
+        const previa = previoPorNumero.get(o.numeroOrden);
         return {
           ...resto,
           distribucion: "AGROPECUARIA",
@@ -972,6 +991,10 @@ router.post(
           podLng: pod?.podLng ?? null,
           reasonName: pod?.reasonName ?? null,
           reasonCode: pod?.reasonCode ?? null,
+          asignadoVehiculo: previa?.asignadoVehiculo ?? null,
+          ruta: previa?.ruta ?? null,
+          reenviado: previa?.reenviado ?? false,
+          reenviadoAt: previa?.reenviadoAt ?? null,
         };
       });
 
