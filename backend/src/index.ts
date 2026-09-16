@@ -4,8 +4,8 @@ import { iniciarLimpiezaDiaria } from "./jobs/limpiezaDiaria";
 
 const app = createApp();
 
-// El job de limpieza solo corre en producción (evita borrar datos desde un dev local).
-if (env.NODE_ENV === "production") iniciarLimpiezaDiaria();
+// El job de limpieza corre en TODOS los entornos (misma BD compartida siempre).
+iniciarLimpiezaDiaria();
 
 const server = app.listen(env.PORT, () => {
   console.log(`🚀 Backend escuchando en http://localhost:${env.PORT}`);
