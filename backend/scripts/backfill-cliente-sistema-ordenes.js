@@ -41,10 +41,10 @@ function similitudNombre(a, b) {
     } catch { /* ignore */ }
   }
   const clientesConNombre = clientesGS.filter((c) => c.cliente && c.cliente.trim());
-  function mejorMatchPorNombre(destino) {
+  function mejorMatchPorNombre(destino, clienteExcel) {
     let mejor = null, mejorScore = 0;
     for (const c of clientesConNombre) {
-      const score = similitudNombre(destino, c.cliente);
+      const score = Math.max(similitudNombre(destino, c.cliente), similitudNombre(clienteExcel, c.cliente));
       if (score > mejorScore) { mejorScore = score; mejor = c; }
     }
     return mejorScore >= UMBRAL_SIMILITUD_NOMBRE ? mejor : null;
@@ -65,7 +65,7 @@ function similitudNombre(a, b) {
       gsPorDestino.get(claveSinEspacios(o.destino)) ??
       (o.codigo ? gsPorCodigo.get(norm(o.codigo)) : undefined);
     let elegido = match;
-    if (!elegido) elegido = mejorMatchPorNombre(o.destino);
+    if (!elegido) elegido = mejorMatchPorNombre(o.destino, o.cliente);
     if (!elegido) { sinMatchAgro++; continue; }
     const data = { clienteSistemaId: elegido.id };
     if (elegido.codigoDireccion) data.codigo = elegido.codigoDireccion;

@@ -887,13 +887,17 @@ router.post(
       }
 
       // Clientes con nombre real, para el fallback por parecido (mín. 50% de
-      // palabras en común entre el destino y el nombre del cliente).
+      // palabras en común). Compara contra AMBOS, destino y cliente del Excel,
+      // y se queda con el mejor puntaje: hay archivos donde el destino es un
+      // texto genérico repetido ("PRINCIPAL" en casi toda fila) y el dato que
+      // sí identifica al cliente real es el nombre del Excel (ej. "MEGATIENDA
+      // BAZURTO" ≈ Cliente.cliente "Megatienda Bazurto"), no el destino.
       const clientesConNombre = clientesGS.filter((c) => c.cliente && c.cliente.trim());
-      function mejorMatchPorNombre(destino: string): (typeof clientesConNombre)[number] | null {
+      function mejorMatchPorNombre(destino: string, clienteExcel: string): (typeof clientesConNombre)[number] | null {
         let mejor: (typeof clientesConNombre)[number] | null = null;
         let mejorScore = 0;
         for (const c of clientesConNombre) {
-          const score = similitudNombre(destino, c.cliente);
+          const score = Math.max(similitudNombre(destino, c.cliente), similitudNombre(clienteExcel, c.cliente));
           if (score > mejorScore) {
             mejorScore = score;
             mejor = c;
@@ -927,7 +931,7 @@ router.post(
           if (match.cliente) cliente = match.cliente;
           clienteSistemaId = match.id;
         } else {
-          const mejor = mejorMatchPorNombre(o.destino);
+          const mejor = mejorMatchPorNombre(o.destino, o.cliente);
           if (mejor) {
             codigo = mejor.codigoDireccion ?? codigo;
             if (mejor.direccion) direccion = mejor.direccion;
