@@ -60,6 +60,7 @@ type OrdenGrupo = {
   sobrescritoConcatenado: boolean;
   clienteOriginal: string | null;
   clienteAsignado: string | null;
+  clienteSistemaId: string | null;
 };
 
 function agrupar(ordenes: Orden[]): OrdenGrupo[] {
@@ -89,6 +90,7 @@ function agrupar(ordenes: Orden[]): OrdenGrupo[] {
         sobrescritoConcatenado: !!o.sobrescritoConcatenado,
         clienteOriginal: o.clienteOriginal ?? null,
         clienteAsignado: o.clienteAsignado ?? null,
+        clienteSistemaId: o.clienteSistemaId ?? null,
       };
       map.set(key, g);
     }
@@ -1056,6 +1058,9 @@ export default function OrdenesPage() {
                                 {g.sobrescritoConcatenado && (
                                   <span className="block text-[10px] font-medium text-[#b5731e]">sobrescrito por concatenado</span>
                                 )}
+                                {!g.sobrescritoConcatenado && g.clienteSistemaId && (
+                                  <span className="block text-[10px] font-medium text-[#2f8f4e]">✓ Cliente del sistema</span>
+                                )}
                                 {tc(g.clienteAsignado ?? g.cliente) || "—"}
                               </td>
                               <td className="px-4 py-3 text-[#45505e]">{dirLimpia(g.direccion) ? tc(dirLimpia(g.direccion)) : "—"}</td>
@@ -1094,6 +1099,9 @@ export default function OrdenesPage() {
                               <td className="px-4 py-3 text-[#45505e]">
                                 {g.sobrescritoConcatenado && (
                                   <span className="block text-[10px] font-medium text-[#b5731e]">sobrescrito por concatenado</span>
+                                )}
+                                {!g.sobrescritoConcatenado && g.clienteSistemaId && (
+                                  <span className="block text-[10px] font-medium text-[#2f8f4e]">✓ Cliente del sistema</span>
                                 )}
                                 {g.clienteAsignado || g.cliente || "—"}
                               </td>
@@ -1239,6 +1247,11 @@ export default function OrdenesPage() {
                   <p className="mt-0.5 text-xs font-medium text-[#b5731e]">
                     Cliente sobrescrito por concatenado
                     {detalle.clienteOriginal ? ` (original: ${tc(detalle.clienteOriginal)})` : ""}
+                  </p>
+                )}
+                {!detalle.sobrescritoConcatenado && detalle.clienteSistemaId && (
+                  <p className="mt-0.5 text-xs font-medium text-[#2f8f4e]">
+                    ✓ Cliente del sistema (datos reales de nuestra base, no del archivo importado)
                   </p>
                 )}
               </div>

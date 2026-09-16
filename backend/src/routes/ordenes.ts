@@ -857,22 +857,24 @@ router.post(
       // código exacto (Cliente.codigoDireccion); si no hay, por destino
       // normalizado (sin espacios ni puntos) contra los consecutivos del
       // cliente; si tampoco, por parecido de nombre (destino vs Cliente.cliente,
-      // ver mejorMatchPorNombre). Rellena código/dirección solo si la orden no
-      // los trae ya.
+      // ver mejorMatchPorNombre). Cuando SÍ hay un cliente real identificado,
+      // sus datos (código/dirección/nombre) MANDAN sobre lo que traiga el
+      // Excel: el "CODIGO" del archivo de Agropecuaria no es un código de
+      // cliente (es una referencia de línea/lote, nunca coincide con
+      // Cliente.codigoDireccion), así que no puede bloquear la resolución real.
       const clientesGS = await prisma.cliente.findMany({
         select: { id: true, cliente: true, codigoDireccion: true, direccion: true, consecutivos: true },
       });
-      const gsPorCodigo = new Map<string, { direccion: string | null }>();
-      const gsPorDestino = new Map<string, { codigoDireccion: string | null; direccion: string | null }>();
+      type ClienteMatch = { id: string; cliente: string | null; codigoDireccion: string | null; direccion: string | null };
+      const gsPorCodigo = new Map<string, ClienteMatch>();
+      const gsPorDestino = new Map<string, ClienteMatch>();
       for (const c of clientesGS) {
-        if (c.codigoDireccion) gsPorCodigo.set(claveCliente(c.codigoDireccion), { direccion: c.direccion });
+        if (c.codigoDireccion) gsPorCodigo.set(claveCliente(c.codigoDireccion), c);
         if (!c.consecutivos) continue;
         try {
           for (const con of JSON.parse(c.consecutivos) as string[]) {
             const k = claveSinEspacios(con);
-            if (k && !gsPorDestino.has(k)) {
-              gsPorDestino.set(k, { codigoDireccion: c.codigoDireccion, direccion: c.direccion });
-            }
+            if (k && !gsPorDestino.has(k)) gsPorDestino.set(k, c);
           }
         } catch { /* consecutivos inválidos */ }
       }
@@ -901,34 +903,40 @@ router.post(
         let codigo = o.codigo;
         let direccion = o.direccion;
         let cliente = o.cliente;
-        let sinResolver = false;
-        const porCodigo = codigo ? gsPorCodigo.get(claveCliente(codigo)) : undefined;
-        if (porCodigo) {
-          direccion = direccion || porCodigo.direccion;
+        let clienteSistemaId: string | null = null;
+
+        // El consecutivo se guarda como "cliente - destino" (ver
+        // asignarConsecutivosAuto/nuevosConsecutivosPorCliente más abajo), así
+        // que hay que buscar primero por esa concatenación completa; el
+        // destino solo (para consecutivos guardados sin cliente, ej.
+        // "PRINCIPAL") y el código exacto del archivo quedan de respaldo.
+        const match =
+          gsPorDestino.get(claveSinEspacios(`${o.cliente} - ${o.destino}`)) ??
+          gsPorDestino.get(claveSinEspacios(o.destino)) ??
+          (codigo ? gsPorCodigo.get(claveCliente(codigo)) : undefined);
+        if (match) {
+          codigo = match.codigoDireccion ?? codigo;
+          if (match.direccion) direccion = match.direccion;
+          if (match.cliente) cliente = match.cliente;
+          clienteSistemaId = match.id;
         } else {
-          const porDestino = gsPorDestino.get(claveSinEspacios(o.destino));
-          if (porDestino) {
-            codigo = codigo || porDestino.codigoDireccion;
-            direccion = direccion || porDestino.direccion;
-          } else {
-            const mejor = mejorMatchPorNombre(o.destino);
-            if (mejor) {
-              codigo = codigo || mejor.codigoDireccion;
-              direccion = direccion || mejor.direccion;
-              cliente = mejor.cliente ?? cliente;
-              const consecutivo = `${o.cliente} - ${o.destino}`;
-              let set = nuevosConsecutivosPorCliente.get(mejor.id);
-              if (!set) {
-                set = new Set();
-                nuevosConsecutivosPorCliente.set(mejor.id, set);
-              }
-              set.add(consecutivo);
-            } else if (!codigo) {
-              sinResolver = true;
+          const mejor = mejorMatchPorNombre(o.destino);
+          if (mejor) {
+            codigo = mejor.codigoDireccion ?? codigo;
+            if (mejor.direccion) direccion = mejor.direccion;
+            if (mejor.cliente) cliente = mejor.cliente;
+            clienteSistemaId = mejor.id;
+            const consecutivo = `${o.cliente} - ${o.destino}`;
+            let set = nuevosConsecutivosPorCliente.get(mejor.id);
+            if (!set) {
+              set = new Set();
+              nuevosConsecutivosPorCliente.set(mejor.id, set);
             }
+            set.add(consecutivo);
           }
         }
-        return { ...o, numeroOrden: tipo + o.numeroOrden, codigo, direccion, cliente, sinResolver };
+        const sinResolver = !clienteSistemaId;
+        return { ...o, numeroOrden: tipo + o.numeroOrden, codigo, direccion, cliente, clienteSistemaId, sinResolver };
       });
       if (ordenesConCodigo.length === 0) {
         throw new HttpError(400, "El archivo no contiene órdenes válidas");
@@ -1314,11 +1322,11 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
     const candidatosTat = nit
       ? await prisma.cliente.findMany({
           where: { tipo: "TAT", OR: [{ codigoDireccion: nit }, { codigoDireccion: { startsWith: `${nit}-` } }] },
-          select: { direccion: true, vendedor: true },
+          select: { id: true, cliente: true, direccion: true, vendedor: true },
         })
       : [];
     const dirInv = String(filas[0].direccion_sucursal ?? "").trim();
-    let clienteTat: { direccion: string | null; vendedor: string | null } | null = null;
+    let clienteTat: { id: string; cliente: string | null; direccion: string | null; vendedor: string | null } | null = null;
     if (candidatosTat.length === 1) {
       clienteTat = candidatosTat[0];
     } else if (candidatosTat.length > 1) {
@@ -1345,18 +1353,22 @@ router.post("/factura", requireAuth, requirePermiso("/ordenes"), async (req, res
     const dirInvOk = dirInv.length >= 2 && !NO_DIRECCION_TAT.has(dirInv.toUpperCase());
     const direccion = dirInvOk ? dirInv : (dirMaestro && esDireccionTatValida(dirMaestro) ? dirMaestro : null);
     const destino = codigo ?? direccion ?? nit;
+    // Nombre real del cliente en nuestra BD: manda sobre la razón social que
+    // trae la factura de Siesa (puede venir con distinta mayúscula/formato).
+    const clienteReal = clienteTat?.cliente?.trim() || null;
 
     // Una línea por producto de la factura.
     const lineas = filas.map((f) => ({
       fecha: fechaFacturaADMY(f.fecha_documento, fecFac),
       numeroOrden,
-      cliente: String(f.razon_social_cliente ?? "").trim(),
+      cliente: clienteReal || String(f.razon_social_cliente ?? "").trim(),
       destino,
       producto: limpiarProductoTat(String(f.tipo_comercial ?? "")) || "MERCANCÍA",
       cantidadKg: Number(f.cantidad_inv) || 0,
       nit: codigo,
       codigo,
       direccion,
+      clienteSistemaId: clienteTat?.id ?? null,
       vendedor: clienteTat?.vendedor?.trim() ?? null,
       valor: Number(f.valor_subtotal) || 0,
       estado: "Pendiente",

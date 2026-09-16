@@ -279,6 +279,10 @@ export interface Orden {
   clienteOriginal?: string;
   clienteAsignado?: string;
   sobrescritoConcatenado?: boolean;
+  // Si no es null, cliente/codigo/direccion se re-escribieron con los datos
+  // reales del Cliente (por destino/consecutivo/NIT/parecido de nombre) en
+  // vez de quedarse con lo que traia el Excel/factura.
+  clienteSistemaId?: string | null;
 }
 
 export function getOrdenes(all = false): Promise<Orden[]> {

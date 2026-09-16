@@ -85,6 +85,11 @@ model Orden {
   // Vendedor asignado al cliente (del maestro TAT; null en Agropecuaria).
   vendedor String?
 
+  // Si no es null, cliente/codigo/direccion fueron re-escritos con los datos
+  // reales del Cliente (id acá referenciado) en vez de quedarse con lo que
+  // traía el Excel/factura. La UI muestra un aviso "Cliente del sistema".
+  clienteSistemaId String?
+
   // Distribución a la que pertenece la orden: "AGROPECUARIA" (Excel) o "TAT" (API).
   distribucion String  @default("AGROPECUARIA")
 
