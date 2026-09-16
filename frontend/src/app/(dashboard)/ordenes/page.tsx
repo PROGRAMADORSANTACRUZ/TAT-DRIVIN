@@ -1085,7 +1085,7 @@ export default function OrdenesPage() {
                           ) : (
                             <>
                               <td className="whitespace-nowrap px-4 py-3 text-[#45505e]">
-                                {`${tc(g.cliente)} - ${tc(g.destino)}`}
+                                {`${g.clienteAsignado ?? g.cliente} - ${g.destino}`}
                               </td>
                               <td className="px-4 py-3">
                                 {codigo ? (
@@ -1241,7 +1241,7 @@ export default function OrdenesPage() {
                   )}
                 </div>
                 <p className="mt-0.5 text-sm text-[#5f7a68]">
-                  {`${detalle.cliente} - ${detalle.destino}`} · {detalle.fecha}
+                  {`${detalle.clienteAsignado ?? detalle.cliente} - ${detalle.destino}`} · {detalle.fecha}
                 </p>
                 {detalle.sobrescritoConcatenado && (
                   <p className="mt-0.5 text-xs font-medium text-[#b5731e]">
